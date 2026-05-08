@@ -13,7 +13,7 @@ function parseLRC(lrc) {
 }
 
 export default function Lyrics() {
-  const { currentTrack, progress, toggleLyrics } = usePlayer();
+  const { currentTrack, progress, toggleLyrics, seek } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,6 +61,7 @@ export default function Lyrics() {
               <p
                 key={i}
                 ref={i === currentLine ? activeLineRef : null}
+                onClick={() => seek(line.time)}
                 className={`transition-all duration-300 cursor-pointer hover:text-white ${
                   i === currentLine
                     ? 'text-white text-2xl font-bold scale-100'
