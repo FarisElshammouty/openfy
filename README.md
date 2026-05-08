@@ -51,10 +51,6 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 - OS media controls via Media Session API (taskbar, lock screen)
 - Discord Rich Presence - shows what you're listening to
 
-**Social**
-- Listen Along sessions - share a link, friends hear what you hear in real-time
-- WebSocket-powered sync with relay server support
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -64,7 +60,6 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 | Desktop | Electron 33 |
 | Audio Sources | Piped API, InnerTube (iOS client) |
 | Lyrics | LRCLIB |
-| Real-time | WebSockets (ws) |
 | Social | Discord RPC |
 
 ## Getting Started
@@ -114,10 +109,8 @@ openfy/
 ├── server/             # Express backend
 │   ├── index.js        # Routes, Piped/InnerTube streaming proxy
 │   ├── db.js           # SQLite database
-│   ├── discord.js      # Discord RPC
-│   └── sessions.js     # Listen Along WebSocket sessions
-├── electron/           # Electron main + preload
-└── relay/              # Optional relay server for remote Listen Along
+│   └── discord.js      # Discord RPC
+└── electron/           # Electron main + preload
 ```
 
 ## Configuration
@@ -126,7 +119,6 @@ openfy/
 |---------------------|---------|-------------|
 | `PORT` | `3001` | Backend server port |
 | `PIPED_API` | `https://api.piped.private.coffee,...` | Comma-separated Piped instance URLs |
-| `RELAY_URL` | `http://84.8.151.252:4000` | Listen Along relay server |
 
 ## License
 

@@ -32,7 +32,7 @@ export async function initDiscord() {
   setInterval(() => { if (!connected && !connecting) connect(); }, 30_000);
 }
 
-export function updatePresence({ title, artist, thumbnail, videoId, duration, elapsed, playing, sessionUrl, openUrl }) {
+export function updatePresence({ title, artist, thumbnail, videoId, duration, elapsed, playing }) {
   if (!rpc || !connected) return;
 
   if (!playing || !title) {
@@ -41,12 +41,6 @@ export function updatePresence({ title, artist, thumbnail, videoId, duration, el
   }
 
   const now = Date.now();
-  const buttons = [];
-
-  if (sessionUrl) {
-    buttons.push({ label: 'Listen Along', url: sessionUrl });
-  }
-  buttons.push({ label: 'Listen on Openfy', url: openUrl || `https://music.youtube.com/watch?v=${videoId}` });
 
   const activity = {
     name: 'Openfy',
@@ -59,7 +53,7 @@ export function updatePresence({ title, artist, thumbnail, videoId, duration, el
     largeImageText: title,
     smallImageKey: 'https://img.icons8.com/fluency/512/music.png',
     smallImageText: 'Openfy',
-    buttons
+    buttons: [{ label: 'Get Openfy', url: 'https://github.com/FarisElshammouty/openfy/releases' }]
   };
 
   rpc.user?.setActivity(activity)

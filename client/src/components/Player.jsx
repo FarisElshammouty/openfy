@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 function fmt(s) {
@@ -12,19 +11,8 @@ export default function Player() {
     crossfade, showQueue, showLyrics,
     togglePlay, playNext, playPrev, seek, setVolume, toggleShuffle, toggleRepeat,
     toggleCrossfade, toggleQueue, toggleLyrics,
-    isLiked, toggleLike, sessionId, sessionUrl, listenerCount, startSession, stopSession
+    isLiked, toggleLike
   } = usePlayer();
-  const [copied, setCopied] = useState(false);
-
-  const handleShare = async () => {
-    if (sessionId) { stopSession(); }
-    else {
-      const res = await startSession();
-      await navigator.clipboard.writeText(res.url).catch(() => {});
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
@@ -104,28 +92,6 @@ export default function Player() {
             <path d="M16 9V7c0-2.76-2.24-5-5-5S6 4.24 6 7v2c-1.1 0-2 .9-2 2v1h2.17C6.06 12.34 6 12.67 6 13c0 3.31 2.69 6 6 6s6-2.69 6-6c0-.33-.06-.66-.17-1H20v-1c0-1.1-.9-2-2-2h-2zm-6-2c0-1.65 1.35-3 3-3s3 1.35 3 3v2H8V7h2zm4 8.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
           </svg>
         </button>
-
-        {/* Share */}
-        {currentTrack && (
-          <div className="relative">
-            <button onClick={handleShare} title={sessionId ? 'Stop sharing' : 'Start Listen Along'}
-              className={`p-1.5 rounded transition-colors relative ${sessionId ? 'text-green-500' : 'text-neutral-400 hover:text-white'}`}>
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z" />
-              </svg>
-              {listenerCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 text-[9px] font-bold bg-green-500 text-black rounded-full w-3.5 h-3.5 flex items-center justify-center">
-                  {listenerCount}
-                </span>
-              )}
-            </button>
-            {copied && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white text-black text-xs font-medium px-2.5 py-1 rounded whitespace-nowrap">
-                Link copied!
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Volume */}
         <button onClick={() => setVolume(volume === 0 ? 0.7 : 0)} className="text-neutral-400 hover:text-white transition-colors ml-1">

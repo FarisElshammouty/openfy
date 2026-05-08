@@ -42,10 +42,6 @@ export const api = {
       body: JSON.stringify(data)
     }).catch(() => {}),
 
-  createSession: () => request('/sessions', { method: 'POST' }),
-  getSession: (id) => request(`/sessions/${id}`),
-  deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
-  getRelayInfo: () => request('/relay-info'),
   getLyrics: (title, artist) =>
     request(`/lyrics?title=${encodeURIComponent(title || '')}&artist=${encodeURIComponent(artist || '')}`)
 };

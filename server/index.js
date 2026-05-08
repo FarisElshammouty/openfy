@@ -6,13 +6,11 @@ import { fileURLToPath } from 'url';
 import { Innertube, ClientType } from 'youtubei.js';
 import db from './db.js';
 import { initDiscord, updatePresence } from './discord.js';
-import { createSession, getSession, deleteSession, attachWebSocket, getLocalIP } from './sessions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 const PIPED_INSTANCES = (process.env.PIPED_API || 'https://api.piped.private.coffee,https://pipedapi.wireway.ch').split(',');
-const RELAY_URL = process.env.RELAY_URL || 'http://84.8.151.252:4000';
 
 app.use(cors());
 app.use(express.json());
@@ -92,17 +90,6 @@ async function resolveViaPiped(videoId) {
   }
   return null;
 }
-
-// ── Relay info ─────────────────────────────────────────────────────
-
-app.get('/api/relay-info', (_req, res) => {
-  if (RELAY_URL) {
-    const wsUrl = RELAY_URL.replace(/^http/, 'ws');
-    res.json({ relayUrl: RELAY_URL, wsUrl });
-  } else {
-    res.json({ relayUrl: null, wsUrl: null });
-  }
-});
 
 // ── Lyrics (LRCLIB) ────────────────────────────────────────────────
 
@@ -401,48 +388,8 @@ app.delete('/api/liked/:videoId', (req, res) => {
 initDiscord();
 
 app.post('/api/discord/presence', (req, res) => {
-  const data = req.body;
-  if (data.videoId) {
-    const host = process.env.OPENFY_HOST || getLocalIP();
-    data.openUrl = `http://${host}:${PORT}/open/${data.videoId}`;
-  }
-  updatePresence(data);
+  updatePresence(req.body);
   res.json({ success: true });
-});
-
-// ── Listen-along sessions ──────────────────────────────────────────
-
-app.post('/api/sessions', (_req, res) => {
-  const id = createSession();
-  const host = process.env.OPENFY_HOST || getLocalIP();
-  if (RELAY_URL) {
-    const wsUrl = RELAY_URL.replace(/^http/, 'ws');
-    res.json({ id, url: `${RELAY_URL}/listen/${id}`, protocolUrl: `openfy://listen/${id}`, wsUrl: `${wsUrl}/ws/${id}`, host });
-  } else {
-    res.json({ id, url: `http://${host}:${PORT}/listen/${id}`, protocolUrl: `openfy://listen/${id}`, host });
-  }
-});
-
-app.get('/api/sessions/:id', (req, res) => {
-  const s = getSession(req.params.id);
-  if (!s) return res.status(404).json({ error: 'Session not found' });
-  res.json({ id: s.id, listeners: s.listeners.size, active: !!s.host, state: s.state });
-});
-
-app.delete('/api/sessions/:id', (req, res) => {
-  deleteSession(req.params.id);
-  res.json({ success: true });
-});
-
-// ── Open in app redirect ───────────────────────────────────────────
-
-app.get('/open/:videoId', (_req, res) => {
-  const videoId = _req.params.videoId;
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Opening Openfy...</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}
-.c{max-width:400px;padding:2rem}h1{font-size:1.5rem;margin-bottom:.5rem}p{color:#999;margin-bottom:1.5rem}a{display:inline-block;background:#1DB954;color:#000;font-weight:700;padding:.75rem 2rem;border-radius:9999px;text-decoration:none}</style>
-<script>window.location.href='openfy://play/${videoId}';</script></head>
-<body><div class="c"><h1>Opening Openfy...</h1><p>If the app didn't open, click below.</p><a href="openfy://play/${videoId}">Open in Openfy</a></div></body></html>`);
 });
 
 // ── Production ──────────────────────────────────────────────────────
@@ -454,8 +401,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const serverReady = new Promise(resolve => {
-  const httpServer = app.listen(PORT, () => {
-    attachWebSocket(httpServer);
+  app.listen(PORT, () => {
     console.log(`\n  Openfy running at http://localhost:${PORT}`);
     console.log(`  Piped instances: ${PIPED_INSTANCES.join(', ')}\n`);
     resolve();

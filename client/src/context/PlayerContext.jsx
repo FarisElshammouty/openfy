@@ -58,12 +58,6 @@ export function PlayerProvider({ children }) {
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
 
-  const [sessionId, setSessionId] = useState(null);
-  const [sessionUrl, setSessionUrl] = useState(null);
-  const [protocolUrl, setProtocolUrl] = useState(null);
-  const [listenerCount, setListenerCount] = useState(0);
-  const wsRef = useRef(null);
-
   const sr = useRef({ queue: [], shuffle: false, repeat: 'off' });
   sr.current = { queue, shuffle, repeat };
   const volumeRef = useRef(volume);
@@ -228,8 +222,7 @@ export function PlayerProvider({ children }) {
           title: currentTrack.title, artist: currentTrack.artist,
           thumbnail: currentTrack.thumbnail, videoId: currentTrack.videoId,
           duration: a?.duration || currentTrack.duration || 0,
-          elapsed: a?.currentTime || 0, playing: true,
-          sessionUrl: sessionUrl || undefined, protocolUrl: protocolUrl || undefined
+          elapsed: a?.currentTime || 0, playing: true
         });
       } else {
         api.updateDiscordPresence({ playing: false });
@@ -238,7 +231,7 @@ export function PlayerProvider({ children }) {
     sendPresence();
     const a = audioRef.current;
     if (a) { a.addEventListener('seeked', sendPresence); return () => a.removeEventListener('seeked', sendPresence); }
-  }, [currentTrack, isPlaying, sessionUrl, protocolUrl]);
+  }, [currentTrack, isPlaying]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -346,60 +339,6 @@ export function PlayerProvider({ children }) {
 
   const refreshPlaylists = useCallback(async () => { setPlaylists(await api.getPlaylists()); }, []);
 
-  // Listen Along
-  const sendSessionState = useCallback(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== 1) return;
-    const a = audioRef.current;
-    const { queue: q } = sr.current;
-    const track = queueIndex >= 0 && queueIndex < q.length ? q[queueIndex] : null;
-    if (!track) return;
-    ws.send(JSON.stringify({
-      type: 'state',
-      data: {
-        videoId: track.videoId, title: track.title, artist: track.artist,
-        thumbnail: track.thumbnail, currentTime: a.currentTime,
-        duration: a.duration || track.duration || 0, playing: !a.paused
-      }
-    }));
-  }, [queueIndex]);
-
-  const startSession = useCallback(async () => {
-    const res = await api.createSession();
-    setSessionId(res.id);
-    setSessionUrl(res.url);
-    setProtocolUrl(res.protocolUrl);
-    const wsUrl = res.wsUrl
-      ? `${res.wsUrl}?role=host`
-      : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/listen/${res.id}?role=host`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-    ws.onopen = () => sendSessionState();
-    ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'listeners') setListenerCount(msg.count); };
-    ws.onclose = () => { setSessionId(null); setSessionUrl(null); setProtocolUrl(null); setListenerCount(0); wsRef.current = null; };
-    return res;
-  }, [sendSessionState]);
-
-  const stopSession = useCallback(() => {
-    if (wsRef.current) wsRef.current.close();
-    if (sessionId) api.deleteSession(sessionId).catch(() => {});
-    setSessionId(null); setSessionUrl(null); setProtocolUrl(null); setListenerCount(0); wsRef.current = null;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (currentTrack && isPlaying && !sessionId && !wsRef.current) startSession().catch(() => {});
-  }, [currentTrack, isPlaying, sessionId, startSession]);
-
-  useEffect(() => {
-    const a = audioRef.current;
-    const send = () => sendSessionState();
-    a.addEventListener('play', send); a.addEventListener('pause', send); a.addEventListener('seeked', send);
-    const interval = setInterval(send, 3000);
-    return () => { a.removeEventListener('play', send); a.removeEventListener('pause', send); a.removeEventListener('seeked', send); clearInterval(interval); };
-  }, [sessionId, sendSessionState]);
-
-  useEffect(() => { if (sessionId) sendSessionState(); }, [currentTrack?.videoId]);
-
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
@@ -407,8 +346,7 @@ export function PlayerProvider({ children }) {
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
       toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics,
-      isLiked, toggleLike, playlists, refreshPlaylists,
-      sessionId, sessionUrl, listenerCount, startSession, stopSession
+      isLiked, toggleLike, playlists, refreshPlaylists
     }}>
       {children}
     </Ctx.Provider>

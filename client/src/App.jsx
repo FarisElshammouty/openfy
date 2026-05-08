@@ -6,7 +6,6 @@ import Home from './components/Home';
 import Search from './components/Search';
 import Library from './components/Library';
 import PlaylistView from './components/PlaylistView';
-import ListenAlong from './components/ListenAlong';
 import AutoPlay from './components/AutoPlay';
 import QueuePanel from './components/QueuePanel';
 import Lyrics from './components/Lyrics';
@@ -44,10 +43,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <PlayerProvider>
-        <Routes>
-          <Route path="/listen/:sessionId" element={<ListenAlong />} />
-          <Route path="*" element={<MainLayout />} />
-        </Routes>
+        <MainLayout />
       </PlayerProvider>
     </BrowserRouter>
   );
