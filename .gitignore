@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-electron/
+client/dist/
+*.db
+*.db-shm
+*.db-wal
+.env
+.DS_Store
+.claude/
+*-player-script.js
+build/
+music/

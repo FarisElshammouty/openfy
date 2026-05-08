@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Openfy - Listen Along</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0a0a0a;color:#fff;font-family:system-ui,-apple-system,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .c{text-align:center;max-width:420px;padding:2rem;width:100%}
+    .badge{display:inline-block;background:#1DB954;color:#000;font-weight:700;padding:.3rem .9rem;border-radius:9999px;font-size:.75rem;margin-bottom:1.5rem;letter-spacing:.05em}
+    .thumb{width:220px;height:220px;border-radius:12px;object-fit:cover;margin:0 auto 1.25rem;display:block;background:#1a1a1a;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+    .title{font-size:1.3rem;font-weight:700;margin-bottom:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .artist{color:#aaa;margin-bottom:1.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .status{font-size:.85rem;margin-bottom:.75rem}
+    .status.live{color:#1DB954}
+    .status.off{color:#666}
+    .bar{width:100%;height:4px;background:#333;border-radius:2px;margin-bottom:.4rem;overflow:hidden}
+    .bar-fill{height:100%;background:#1DB954;border-radius:2px;width:0%;transition:width .4s linear}
+    .time{display:flex;justify-content:space-between;font-size:.75rem;color:#666;margin-bottom:1.25rem}
+    .vol{display:flex;align-items:center;justify-content:center;gap:.5rem;font-size:.85rem;color:#aaa}
+    .vol input{width:100px;accent-color:#1DB954}
+    .waiting{color:#666;font-size:1.1rem;line-height:1.6}
+    .tap{display:none;background:#1DB954;color:#000;font-weight:700;border:none;padding:.75rem 2rem;border-radius:9999px;font-size:1rem;cursor:pointer;margin-top:1rem}
+    .spin{display:inline-block;width:20px;height:20px;border:2px solid #333;border-top-color:#1DB954;border-radius:50%;animation:s .6s linear infinite;margin-bottom:1rem}
+    @keyframes s{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="c">
+    <div class="badge">LISTEN ALONG</div>
+
+    <div id="launch">
+      <div class="spin"></div>
+      <div class="waiting">Opening Openfy...</div>
+      <a id="openBtn" href="#" style="display:none;background:#1DB954;color:#000;font-weight:700;padding:.75rem 2rem;border-radius:9999px;text-decoration:none;margin-top:1rem">Open in Openfy</a>
+      <button id="browserBtn" style="display:none;background:none;border:none;color:#666;cursor:pointer;margin-top:.75rem;text-decoration:underline;font-size:.85rem">or listen in browser</button>
+    </div>
+
+    <div id="wait" style="display:none">
+      <div class="spin"></div>
+      <div class="waiting">Connecting to session...</div>
+    </div>
+
+    <div id="player" style="display:none">
+      <img id="thumb" class="thumb" src="" alt="">
+      <div id="title" class="title"></div>
+      <div id="artist" class="artist"></div>
+      <div id="status" class="status live"></div>
+      <div class="bar"><div class="bar-fill" id="fill"></div></div>
+      <div class="time"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+      <div class="vol">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M9 2a.5.5 0 0 0-.82-.39L4.96 4H2.5A.5.5 0 0 0 2 4.5v7a.5.5 0 0 0 .5.5h2.46l3.22 2.39A.5.5 0 0 0 9 14V2z"/><path d="M11.5 5a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5zm2-1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5z"/></svg>
+        <input type="range" id="vol" min="0" max="100" value="70">
+      </div>
+      <button class="tap" id="tap">Tap to start audio</button>
+    </div>
+  </div>
+
+<script>
+const PIPED=['https://pipedapi.kavin.rocks','https://api.piped.private.coffee','https://pipedapi.adminforge.de'];
+const sid=location.pathname.split('/listen/')[1];
+const audio=new Audio();
+audio.volume=.7;
+let vid=null,needTap=false;
+
+const protocolUrl='openfy://listen/'+sid;
+const openBtn=document.getElementById('openBtn');
+const browserBtn=document.getElementById('browserBtn');
+openBtn.href=protocolUrl;
+openBtn.style.display='none';
+browserBtn.style.display='none';
+
+window.location.href=protocolUrl;
+
+setTimeout(()=>{
+  document.querySelector('#launch .waiting').textContent='If the app didn’t open:';
+  document.querySelector('#launch .spin').style.display='none';
+  openBtn.style.display='inline-block';
+  browserBtn.style.display='block';
+},2000);
+
+browserBtn.onclick=()=>{
+  document.getElementById('launch').style.display='none';
+  document.getElementById('wait').style.display='block';
+  startBrowserPlayer();
+};
+
+function startBrowserPlayer(){
+const proto=location.protocol==='https:'?'wss:':'ws:';
+const ws=new WebSocket(`${proto}//${location.host}/ws/${sid}?role=listener`);
+
+ws.onopen=()=>{document.querySelector('.waiting').textContent='Waiting for host to play...'};
+
+ws.onmessage=async e=>{
+  const msg=JSON.parse(e.data);
+
+  if(msg.type==='state'){
+    const d=msg.data;
+    document.getElementById('wait').style.display='none';
+    document.getElementById('player').style.display='block';
+    document.getElementById('title').textContent=d.title||'';
+    document.getElementById('artist').textContent=d.artist||'';
+    if(d.thumbnail)document.getElementById('thumb').src=d.thumbnail;
+    document.getElementById('status').className='status '+(d.playing?'live':'off');
+    document.getElementById('status').textContent=d.playing?'● Live':'● Paused';
+    prog(d.currentTime,d.duration);
+
+    if(d.videoId!==vid){
+      vid=d.videoId;
+      const url=await resolve(d.videoId);
+      if(url){
+        audio.src=url;
+        const seekTarget=d.currentTime||0;
+        const startPlay=()=>{
+          if(seekTarget>1)audio.currentTime=seekTarget;
+          audio.play().then(()=>{needTap=false;document.getElementById('tap').style.display='none'}).catch(()=>{
+            needTap=true;document.getElementById('tap').style.display='inline-block';
+          });
+        };
+        if(audio.readyState>=2)startPlay();
+        else audio.addEventListener('canplay',startPlay,{once:true});
+        audio.load();
+      }
+    }else if(audio.readyState>=2){
+      if(Math.abs(audio.currentTime-d.currentTime)>3)audio.currentTime=d.currentTime;
+      if(d.playing&&audio.paused&&!needTap)audio.play().catch(()=>{});
+      if(!d.playing&&!audio.paused)audio.pause();
+    }
+  }
+
+  if(msg.type==='ended'){
+    audio.pause();
+    document.getElementById('status').className='status off';
+    document.getElementById('status').textContent='● Session ended';
+  }
+};
+
+ws.onclose=()=>{
+  const s=document.getElementById('status');
+  if(s){s.className='status off';s.textContent='● Disconnected'}
+};
+
+document.getElementById('tap').onclick=()=>{
+  audio.play().then(()=>{needTap=false;document.getElementById('tap').style.display='none'}).catch(()=>{});
+};
+
+document.getElementById('vol').oninput=e=>{audio.volume=e.target.value/100};
+
+async function resolve(id){
+  for(const inst of PIPED){
+    try{
+      const r=await fetch(`${inst}/streams/${id}`);
+      if(!r.ok)continue;
+      const data=await r.json();
+      const best=(data.audioStreams||[]).filter(s=>s.mimeType?.startsWith('audio/')).sort((a,b)=>(b.bitrate||0)-(a.bitrate||0))[0];
+      if(best?.url)return best.url;
+    }catch{}
+  }
+  return null;
+}
+
+function fmt(s){if(!s||!isFinite(s))return'0:00';return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0')}
+
+function prog(c,d){
+  document.getElementById('cur').textContent=fmt(c);
+  document.getElementById('dur').textContent=fmt(d);
+  document.getElementById('fill').style.width=(d>0?(c/d)*100:0)+'%';
+}
+
+setInterval(()=>{if(!audio.paused)prog(audio.currentTime,audio.duration||0)},500);
+}
+</script>
+</body>
+</html>
