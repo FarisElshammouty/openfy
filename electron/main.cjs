@@ -2,7 +2,8 @@ const { app, BrowserWindow, shell, Tray, Menu, ipcMain, nativeImage } = require(
 const path = require('path');
 const fs = require('fs');
 
-const PORT = 3001;
+const DEFAULT_PORT = 3001;
+let serverPort = DEFAULT_PORT;
 const PROTOCOL = 'openfy';
 const logFile = path.join(app.getPath('userData'), 'openfy-debug.log');
 
@@ -27,7 +28,7 @@ log(`argv: ${process.argv.join(' ')}`);
 
 process.env.DB_PATH = path.join(app.getPath('userData'), 'openfy.db');
 process.env.NODE_ENV = 'production';
-process.env.PORT = String(PORT);
+process.env.PORT = String(DEFAULT_PORT);
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
@@ -107,8 +108,8 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadURL(`http://localhost:${PORT}`);
-  log('Window created, loading localhost:' + PORT);
+  mainWindow.loadURL(`http://localhost:${serverPort}`);
+  log('Window created, loading localhost:' + serverPort);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -147,8 +148,8 @@ function handleDeepLink(url) {
   try {
     const routePath = '/' + url.replace(/^openfy:\/\//, '');
     log('Deep link route: ' + routePath);
-    if (routePath.startsWith('/listen/') || routePath.startsWith('/play/')) {
-      mainWindow.loadURL(`http://localhost:${PORT}${routePath}`);
+    if (routePath.startsWith('/play/')) {
+      mainWindow.loadURL(`http://localhost:${serverPort}${routePath}`);
     }
   } catch {}
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -188,14 +189,16 @@ if (!gotTheLock) {
       log('Importing server...');
       const { serverReady } = await import('../server/index.js');
       log('Server module imported, waiting for ready...');
-      await serverReady;
-      log('Server ready');
+      const actualPort = await serverReady;
+      if (actualPort) serverPort = actualPort;
+      log('Server ready on port ' + serverPort);
       createWindow();
       setupTray();
     } catch (err) {
       log(`Server failed: ${err.stack || err}`);
-      createWindow();
-      setupTray();
+      const { dialog } = require('electron');
+      dialog.showErrorBox('Openfy', `Failed to start: ${err.message}\n\nIf another Openfy instance is running, close it and try again.`);
+      app.quit();
     }
   });
 }

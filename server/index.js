@@ -400,11 +400,23 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const serverReady = new Promise(resolve => {
-  app.listen(PORT, () => {
-    console.log(`\n  Openfy running at http://localhost:${PORT}`);
-    console.log(`  Piped instances: ${PIPED_INSTANCES.join(', ')}\n`);
-    resolve();
-  });
+  const tryListen = (port, fallback) => {
+    const server = app.listen(port, () => {
+      const actualPort = server.address().port;
+      console.log(`\n  Openfy running at http://localhost:${actualPort}`);
+      console.log(`  Piped instances: ${PIPED_INSTANCES.join(', ')}\n`);
+      resolve(actualPort);
+    });
+    server.on('error', err => {
+      if (err.code === 'EADDRINUSE' && fallback) {
+        console.log(`  Port ${port} in use, picking a free port...`);
+        tryListen(0, false);
+      } else {
+        throw err;
+      }
+    });
+  };
+  tryListen(PORT, true);
 });
 
 export { serverReady };
