@@ -93,6 +93,17 @@ async function resolveViaPiped(videoId) {
 
 // ── Lyrics (LRCLIB) ────────────────────────────────────────────────
 
+async function fetchLrclib(url) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Openfy/1.0' },
+      signal: AbortSignal.timeout(10000)
+    }).catch(() => null);
+    if (r?.ok) return r.json();
+  }
+  return null;
+}
+
 app.get('/api/lyrics', async (req, res) => {
   try {
     const { title, artist } = req.query;
@@ -108,25 +119,13 @@ app.get('/api/lyrics', async (req, res) => {
     const params = new URLSearchParams({ track_name: t });
     if (a) params.set('artist_name', a);
 
-    let r = await fetch(`https://lrclib.net/api/get?${params}`, {
-      headers: { 'User-Agent': 'Openfy/1.0' },
-      signal: AbortSignal.timeout(5000)
-    }).catch(() => null);
-
-    if (r?.ok) {
-      const data = await r.json();
-      if (data.syncedLyrics || data.plainLyrics)
-        return res.json({ syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null });
-    }
+    const data = await fetchLrclib(`https://lrclib.net/api/get?${params}`);
+    if (data?.syncedLyrics || data?.plainLyrics)
+      return res.json({ syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null });
 
     const q = `${t} ${a}`.trim();
-    r = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`, {
-      headers: { 'User-Agent': 'Openfy/1.0' },
-      signal: AbortSignal.timeout(5000)
-    }).catch(() => null);
-
-    if (r?.ok) {
-      const results = await r.json();
+    const results = await fetchLrclib(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);
+    if (Array.isArray(results)) {
       const best = results.find(x => x.syncedLyrics) || results[0];
       if (best) return res.json({ syncedLyrics: best.syncedLyrics || null, plainLyrics: best.plainLyrics || null });
     }
