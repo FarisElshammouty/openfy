@@ -111,7 +111,7 @@ export function PlayerProvider({ children }) {
     return () => a.removeEventListener('ended', onEnd);
   }, []);
 
-  // Crossfade pre-trigger — start next track early
+  // Crossfade pre-trigger - start next track early
   useEffect(() => {
     if (!crossfade || !isPlaying || !duration || duration < 15) return;
     const threshold = duration - CROSSFADE_MS / 1000;
@@ -132,7 +132,7 @@ export function PlayerProvider({ children }) {
     return () => clearInterval(id);
   }, [crossfade, isPlaying, duration]);
 
-  // Track change — load + crossfade
+  // Track change - load + crossfade
   useEffect(() => {
     if (!currentTrack) return;
     const a = audioRef.current;

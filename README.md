@@ -15,7 +15,7 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 
 <br>
 
-<img src="assets/openfy-lyrics.png" alt="Openfy — Liked Songs with synced lyrics" width="800">
+<img src="assets/openfy-lyrics.png" alt="Openfy - Liked Songs with synced lyrics" width="800">
 
 <sub>Liked Songs playlist with real-time synced lyrics and dynamic theme</sub>
 
@@ -26,7 +26,7 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 ## Features
 
 **Playback**
-- Instant search and play — millions of tracks via Piped & InnerTube
+- Instant search and play - millions of tracks via Piped & InnerTube
 - Gapless queue with Play Next / Add to Queue
 - Crossfade between tracks (3-second overlap)
 - Shuffle, repeat (one/all), and keyboard shortcuts (Space to play/pause)
@@ -49,10 +49,10 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 - System tray with media controls (play/pause, next, previous)
 - Minimize to tray instead of closing
 - OS media controls via Media Session API (taskbar, lock screen)
-- Discord Rich Presence — shows what you're listening to
+- Discord Rich Presence - shows what you're listening to
 
 **Social**
-- Listen Along sessions — share a link, friends hear what you hear in real-time
+- Listen Along sessions - share a link, friends hear what you hear in real-time
 - WebSocket-powered sync with relay server support
 
 ## Tech Stack

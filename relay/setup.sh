@@ -1,5 +1,5 @@
 #!/bin/bash
-# Openfy Relay — Oracle Cloud setup script
+# Openfy Relay - Oracle Cloud setup script
 # Run this on your free Oracle Cloud VM (Ubuntu or Oracle Linux)
 
 set -e
