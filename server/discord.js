@@ -49,7 +49,7 @@ export function updatePresence({ title, artist, thumbnail, videoId, duration, el
     state: `by ${artist || 'Unknown'}`,
     startTimestamp: new Date(now - (elapsed || 0) * 1000),
     endTimestamp: duration ? new Date(now + (duration - (elapsed || 0)) * 1000) : undefined,
-    largeImageUrl: thumbnail || undefined,
+    largeImageKey: thumbnail || 'https://img.icons8.com/fluency/512/music.png',
     largeImageText: title,
     smallImageKey: 'https://img.icons8.com/fluency/512/music.png',
     smallImageText: 'Openfy',
