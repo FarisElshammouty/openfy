@@ -224,7 +224,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
     audioUrlCache.delete(videoId);
   }
 
-  // Strategy 2: InnerTube IOS download
+  // Strategy 2: InnerTube IOS direct download (test first chunk before committing)
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const yt = await getYtClient();
@@ -240,11 +240,9 @@ app.get('/api/stream/:videoId', async (req, res) => {
       }
 
       const stream = await yt.download(videoId, dlOpts);
-      const nodeStream = Readable.fromWeb(stream);
-      nodeStream.on('error', () => {
-        if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
-        else res.destroy();
-      });
+      const reader = stream.getReader();
+      const firstRead = await reader.read();
+      if (firstRead.done || !firstRead.value?.length) throw new Error('Empty stream');
 
       if (req.headers.range && dlOpts.range) {
         const start = dlOpts.range.start;
@@ -262,6 +260,11 @@ app.get('/api/stream/:videoId', async (req, res) => {
         res.set('accept-ranges', 'bytes');
         if (total) res.set('content-length', String(total));
       }
+
+      res.write(Buffer.from(firstRead.value));
+      const remaining = new ReadableStream({ pull(ctrl) { return reader.read().then(r => r.done ? ctrl.close() : ctrl.enqueue(r.value)); } });
+      const nodeStream = Readable.fromWeb(remaining);
+      nodeStream.on('error', () => res.destroy());
       nodeStream.pipe(res);
       return;
     } catch (err) {
@@ -269,8 +272,51 @@ app.get('/api/stream/:videoId', async (req, res) => {
         ytClient = null;
         continue;
       }
-      if (!res.headersSent) res.status(502).json({ error: err.message });
     }
+  }
+
+  // Strategy 3: HLS manifest fallback (works when direct download returns 403)
+  try {
+    const yt = await getYtClient();
+    const info = await yt.getBasicInfo(videoId);
+    const hlsUrl = info.streaming_data?.hls_manifest_url;
+    if (!hlsUrl) throw new Error('No HLS manifest');
+
+    const masterRes = await fetch(hlsUrl, { signal: AbortSignal.timeout(10000) });
+    if (!masterRes.ok) throw new Error('HLS manifest fetch failed');
+    const masterText = await masterRes.text();
+
+    let audioPlaylistUrl = null;
+    for (const line of masterText.split('\n')) {
+      if (line.includes('TYPE=AUDIO') && line.includes('URI=')) {
+        const m = line.match(/URI="([^"]+)"/);
+        if (m) { audioPlaylistUrl = m[1]; break; }
+      }
+    }
+    if (!audioPlaylistUrl) throw new Error('No audio playlist in HLS');
+
+    const plRes = await fetch(audioPlaylistUrl, { signal: AbortSignal.timeout(10000) });
+    if (!plRes.ok) throw new Error('Audio playlist fetch failed');
+    const plText = await plRes.text();
+
+    const segments = plText.split('\n').filter(l => l.startsWith('https://'));
+    if (!segments.length) throw new Error('No segments in HLS playlist');
+
+    const chunks = await Promise.all(segments.map(async (segUrl) => {
+      const segRes = await fetch(segUrl, { signal: AbortSignal.timeout(15000) });
+      if (!segRes.ok) return null;
+      return Buffer.from(await segRes.arrayBuffer());
+    }));
+    const body = Buffer.concat(chunks.filter(Boolean));
+
+    res.status(200);
+    res.set('content-type', 'audio/aac');
+    res.set('content-length', String(body.length));
+    res.set('accept-ranges', 'bytes');
+    res.end(body);
+    return;
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: err.message });
   }
 });
 
