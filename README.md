@@ -13,6 +13,12 @@
 
 Openfy is a Spotify-inspired desktop music player that streams audio for free using open APIs. Built with Electron, React, and Express.
 
+<br>
+
+<img src="assets/openfy-lyrics.png" alt="Openfy — Liked Songs with synced lyrics" width="800">
+
+<sub>Liked Songs playlist with real-time synced lyrics and dynamic theme</sub>
+
 ---
 
 </div>
