@@ -38,7 +38,7 @@ export default function Home() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 pt-16">
       <h1 className="text-3xl font-bold mb-6">{greeting()}</h1>
 
       {recent.length > 0 && (
@@ -49,8 +49,11 @@ export default function Home() {
               <button key={t.videoId}
                 onClick={() => playTrack(t, recent)}
                 className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md flex items-center gap-3 pr-3 overflow-hidden transition-colors group text-left">
-                <img src={t.thumbnail} alt="" className="w-14 h-14 object-cover bg-neutral-800 shrink-0" />
-                <div className="font-semibold text-sm truncate flex-1">{t.title}</div>
+                <img src={t.thumbnail} alt="" referrerPolicy="no-referrer" className="w-14 h-14 object-cover bg-neutral-800 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-sm truncate">{t.title}</div>
+                  <div className="text-xs text-neutral-400 truncate">{t.artist}</div>
+                </div>
                 <span className="opacity-0 group-hover:opacity-100 transition-opacity w-9 h-9 rounded-full bg-green-500 flex items-center justify-center text-black shrink-0">
                   <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
                 </span>

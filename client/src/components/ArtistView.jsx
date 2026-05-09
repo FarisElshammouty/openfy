@@ -76,13 +76,14 @@ export default function ArtistView() {
             <h2 className="text-xl font-bold mb-3">Albums</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {artist.albums.map(a => (
-                <div key={a.id} className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors">
+                <Link key={a.id} to={`/album/${a.id}`}
+                  className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors">
                   <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden">
                     {a.thumbnail && <img src={a.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
                   </div>
                   <div className="font-semibold text-sm truncate">{a.title}</div>
                   <div className="text-xs text-neutral-400 truncate">{a.year || 'Album'}</div>
-                </div>
+                </Link>
               ))}
             </div>
           </section>
@@ -94,13 +95,14 @@ export default function ArtistView() {
             <h2 className="text-xl font-bold mb-3">Singles & EPs</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {artist.singles.map(s => (
-                <div key={s.id} className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors">
+                <Link key={s.id} to={`/album/${s.id}`}
+                  className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors">
                   <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden">
                     {s.thumbnail && <img src={s.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
                   </div>
                   <div className="font-semibold text-sm truncate">{s.title}</div>
                   <div className="text-xs text-neutral-400 truncate">{s.year || 'Single'}</div>
-                </div>
+                </Link>
               ))}
             </div>
           </section>

@@ -247,9 +247,28 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const a = audioRef.current;
       if (e.code === 'Space' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        audioRef.current.paused ? audioRef.current.play().catch(() => {}) : audioRef.current.pause();
+        a.paused ? a.play().catch(() => {}) : a.pause();
+      } else if (e.code === 'ArrowRight' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        playNext();
+      } else if (e.code === 'ArrowLeft' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        playPrev();
+      } else if (e.code === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        a.currentTime = Math.min((a.duration || 0), a.currentTime + 5);
+      } else if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        a.currentTime = Math.max(0, a.currentTime - 5);
+      } else if (e.code === 'ArrowUp' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setVolume(v => Math.min(1, v + 0.05));
+      } else if (e.code === 'ArrowDown' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setVolume(v => Math.max(0, v - 0.05));
       }
     };
     window.addEventListener('keydown', handleKey);

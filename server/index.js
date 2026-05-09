@@ -246,6 +246,51 @@ app.get('/api/artist/:id', async (req, res) => {
   }
 });
 
+// ── Album ───────────────────────────────────────────────────────────
+
+const albumCache = new Map();
+
+app.get('/api/album/:id', async (req, res) => {
+  const id = req.params.id;
+  const cached = albumCache.get(id);
+  if (cached && Date.now() - cached.ts < 1800000) return res.json(cached.data);
+
+  try {
+    const yt = await getYtClient();
+    const album = await yt.music.getAlbum(id);
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const bigThumb = (t) => thumbArr(t)[0]?.url || '';
+
+    const albumThumb = bigThumb(album.header?.thumbnail);
+    const albumArtists = (album.header?.artists || []).map(a => ({ name: a.name, id: a.channel_id }));
+
+    const tracks = (album.contents || []).map(item => ({
+      videoId: item.id,
+      title: text(item.title),
+      artist: (item.artists || []).map(a => a.name).join(', ') || (albumArtists[0]?.name || ''),
+      artistId: item.artists?.[0]?.channel_id || albumArtists[0]?.id || '',
+      thumbnail: albumThumb,
+      duration: item.duration?.seconds || 0
+    })).filter(t => t.videoId);
+
+    const data = {
+      id,
+      title: text(album.header?.title),
+      subtitle: text(album.header?.subtitle),
+      year: album.header?.year || '',
+      thumbnail: albumThumb,
+      artists: albumArtists,
+      tracks
+    };
+
+    albumCache.set(id, { data, ts: Date.now() });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Play history ────────────────────────────────────────────────────
 
 app.post('/api/history', (req, res) => {

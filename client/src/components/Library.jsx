@@ -25,7 +25,7 @@ export default function Library() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 pt-16">
       {/* Liked Songs */}
       <section className="mb-10">
         <div className="bg-gradient-to-br from-indigo-800/60 to-neutral-900 rounded-lg p-6 mb-4">

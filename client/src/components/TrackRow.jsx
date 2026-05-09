@@ -4,7 +4,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { api } from '../api';
 
 function fmt(sec) {
-  if (!sec || isNaN(sec)) return '0:00';
+  if (!sec || isNaN(sec)) return '';
   return `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}`;
 }
 

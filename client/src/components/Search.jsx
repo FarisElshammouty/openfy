@@ -37,7 +37,7 @@ export default function Search() {
   }, [query]);
 
   return (
-    <div className="p-6">
+    <div className="p-6 pt-16">
       <div className="mb-6">
         <div className="relative max-w-lg">
           <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" viewBox="0 0 24 24" fill="currentColor">

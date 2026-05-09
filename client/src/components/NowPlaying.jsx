@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 import { api } from '../api';
+import { upgradeThumbnail } from '../utils/thumb';
 
 function parseLRC(lrc) {
   if (!lrc) return [];
@@ -77,7 +78,7 @@ export default function NowPlaying() {
       <div className="flex-1 flex items-center px-12 pb-12 gap-12 min-h-0">
         {/* Left: Album art + info */}
         <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto">
-          <img src={currentTrack.thumbnail} alt="" className="w-full max-w-sm aspect-square rounded-lg shadow-2xl object-cover" />
+          <img src={upgradeThumbnail(currentTrack.thumbnail, 720)} referrerPolicy="no-referrer" alt="" className="w-full max-w-sm aspect-square rounded-lg shadow-2xl object-cover" />
           <div className="mt-8 w-full text-center">
             <h1 className="text-3xl font-bold truncate">{currentTrack.title}</h1>
             <p className={`text-lg text-white/70 truncate ${currentTrack.artistId ? 'cursor-pointer hover:text-white hover:underline' : ''}`}

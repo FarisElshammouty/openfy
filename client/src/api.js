@@ -34,6 +34,7 @@ export const api = {
   unlikeSong: (videoId) => request(`/liked/${videoId}`, { method: 'DELETE' }),
 
   getArtist: (id) => request(`/artist/${id}`),
+  getAlbum: (id) => request(`/album/${id}`),
   getHistory: () => request('/history'),
   recordPlay: (track) => fetch(`${API}/history`, {
     method: 'POST',
