@@ -57,6 +57,7 @@ export function PlayerProvider({ children }) {
   const [dominantColor, setDominantColor] = useState(null);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showNowPlaying, setShowNowPlaying] = useState(false);
 
   const sr = useRef({ queue: [], shuffle: false, repeat: 'off' });
   sr.current = { queue, shuffle, repeat };
@@ -181,6 +182,15 @@ export function PlayerProvider({ children }) {
         artwork: currentTrack.thumbnail ? [{ src: currentTrack.thumbnail, sizes: '512x512', type: 'image/jpeg' }] : []
       });
     }
+
+    api.recordPlay({
+      videoId: currentTrack.videoId,
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      artistId: currentTrack.artistId,
+      thumbnail: currentTrack.thumbnail,
+      duration: currentTrack.duration
+    });
   }, [currentTrack?.videoId]);
 
   useEffect(() => { audioRef.current.volume = volume; }, [volume]);
@@ -325,6 +335,7 @@ export function PlayerProvider({ children }) {
   const toggleCrossfade = useCallback(() => setCrossfade(p => !p), []);
   const toggleQueue = useCallback(() => { setShowQueue(p => !p); if (!showQueue) setShowLyrics(false); }, [showQueue]);
   const toggleLyrics = useCallback(() => { setShowLyrics(p => !p); if (!showLyrics) setShowQueue(false); }, [showLyrics]);
+  const toggleNowPlaying = useCallback(() => { setShowNowPlaying(p => !p); }, []);
 
   const isLiked = useCallback(vid => likedIds.has(vid), [likedIds]);
   const toggleLike = useCallback(async (track) => {
@@ -342,10 +353,10 @@ export function PlayerProvider({ children }) {
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
-      crossfade, dominantColor, showQueue, showLyrics,
+      crossfade, dominantColor, showQueue, showLyrics, showNowPlaying,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
-      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics,
+      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying,
       isLiked, toggleLike, playlists, refreshPlaylists
     }}>
       {children}

@@ -6,12 +6,14 @@ import Home from './components/Home';
 import Search from './components/Search';
 import Library from './components/Library';
 import PlaylistView from './components/PlaylistView';
+import ArtistView from './components/ArtistView';
 import AutoPlay from './components/AutoPlay';
 import QueuePanel from './components/QueuePanel';
 import Lyrics from './components/Lyrics';
+import NowPlaying from './components/NowPlaying';
 
 function MainLayout() {
-  const { dominantColor, showQueue, showLyrics } = usePlayer();
+  const { dominantColor, showQueue, showLyrics, showNowPlaying } = usePlayer();
 
   const gradientStyle = dominantColor ? {
     background: `linear-gradient(to bottom, rgba(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b}, 0.35) 0%, rgb(23, 23, 23) 350px)`
@@ -28,6 +30,7 @@ function MainLayout() {
             <Route path="/search" element={<Search />} />
             <Route path="/library" element={<Library />} />
             <Route path="/playlist/:id" element={<PlaylistView />} />
+            <Route path="/artist/:id" element={<ArtistView />} />
             <Route path="/play/:videoId" element={<AutoPlay />} />
           </Routes>
         </main>
@@ -35,6 +38,7 @@ function MainLayout() {
         {showLyrics && <Lyrics />}
       </div>
       <Player />
+      {showNowPlaying && <NowPlaying />}
     </div>
   );
 }

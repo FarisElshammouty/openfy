@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 import { api } from '../api';
 
@@ -9,28 +10,46 @@ function fmt(sec) {
 
 export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
   const { currentTrack, isPlaying, playTrack, togglePlay, isLiked, toggleLike, insertNext, addToQueue, playlists } = usePlayer();
+  const navigate = useNavigate();
   const active = currentTrack?.videoId === track.videoId;
   const liked = isLiked(track.videoId);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menu, setMenu] = useState(null); // { x, y } | { right: true } | null
   const menuRef = useRef(null);
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    if (!menu) return;
+    const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenu(null); };
+    const esc = (e) => { if (e.key === 'Escape') setMenu(null); };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [menuOpen]);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [menu]);
 
   const handleAddToPlaylist = async (playlistId) => {
-    try {
-      await api.addToPlaylist(playlistId, track);
-    } catch {}
-    setMenuOpen(false);
+    try { await api.addToPlaylist(playlistId, track); } catch {}
+    setMenu(null);
   };
+
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const goToArtist = (e) => {
+    e?.stopPropagation();
+    if (track.artistId) navigate(`/artist/${track.artistId}`);
+    setMenu(null);
+  };
+
+  const menuStyle = menu?.x !== undefined
+    ? { position: 'fixed', left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 320) }
+    : { position: 'absolute', right: 0, top: '100%', marginTop: 4 };
 
   return (
     <div
       onClick={() => active ? togglePlay() : playTrack(track, tracks)}
+      onContextMenu={handleContextMenu}
       className={`flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer group transition-colors ${active ? 'bg-white/10' : 'hover:bg-white/[0.06]'}`}
     >
       <div className="w-8 text-center text-sm text-neutral-400 shrink-0">
@@ -58,7 +77,11 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
 
       <div className="flex-1 min-w-0">
         <div className={`text-sm font-medium truncate ${active ? 'text-green-500' : ''}`}>{track.title}</div>
-        <div className="text-xs text-neutral-400 truncate">{track.artist}</div>
+        <div className="text-xs text-neutral-400 truncate">
+          {track.artistId ? (
+            <span onClick={goToArtist} className="hover:underline hover:text-white cursor-pointer">{track.artist}</span>
+          ) : track.artist}
+        </div>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
@@ -71,10 +94,9 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
           </svg>
         </button>
 
-        {/* Context menu button */}
-        <div className="relative" ref={menuRef}>
+        <div className="relative">
           <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(p => !p); }}
+            onClick={e => { e.stopPropagation(); setMenu(menu ? null : { right: true }); }}
             className="p-1.5 rounded-full text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-white transition-all"
             title="More"
           >
@@ -82,59 +104,68 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
               <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
             </svg>
           </button>
-
-          {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-neutral-800 rounded-lg shadow-2xl py-1 z-50 w-52 border border-neutral-700"
-              onClick={e => e.stopPropagation()}>
-              <button onClick={() => { insertNext(track); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
-                <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-                </svg>
-                Play Next
-              </button>
-              <button onClick={() => { addToQueue(track); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
-                <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
-                </svg>
-                Add to Queue
-              </button>
-              {playlists.length > 0 && (
-                <>
-                  <div className="border-t border-neutral-700 my-1" />
-                  <p className="px-3 py-1 text-xs text-neutral-500 font-semibold uppercase tracking-wider">Add to Playlist</p>
-                  {playlists.map(p => (
-                    <button key={p.id} onClick={() => handleAddToPlaylist(p.id)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200 truncate">
-                      <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                      </svg>
-                      <span className="truncate">{p.name}</span>
-                    </button>
-                  ))}
-                </>
-              )}
-              {onAdd && (
-                <button onClick={() => { onAdd(track); setMenuOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200 border-t border-neutral-700 mt-1">
-                  <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                  Add
-                </button>
-              )}
-            </div>
-          )}
         </div>
-
-        {onRemove && (
-          <button onClick={e => { e.stopPropagation(); onRemove(track.videoId); }}
-            className="p-1.5 rounded-full text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all" title="Remove">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
-          </button>
-        )}
       </div>
 
       <div className="text-sm text-neutral-400 w-12 text-right shrink-0">{fmt(track.duration)}</div>
+
+      {menu && (
+        <div ref={menuRef} style={menuStyle}
+          className="bg-neutral-800 rounded-lg shadow-2xl py-1 z-50 w-52 border border-neutral-700"
+          onClick={e => e.stopPropagation()}>
+          <button onClick={() => { insertNext(track); setMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+            Play Next
+          </button>
+          <button onClick={() => { addToQueue(track); setMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" /></svg>
+            Add to Queue
+          </button>
+          <button onClick={() => { toggleLike(track); setMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+            </svg>
+            {liked ? 'Remove from Liked' : 'Save to Liked'}
+          </button>
+          {track.artistId && (
+            <button onClick={goToArtist}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+              <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+              Go to Artist
+            </button>
+          )}
+          {playlists.length > 0 && (
+            <>
+              <div className="border-t border-neutral-700 my-1" />
+              <p className="px-3 py-1 text-xs text-neutral-500 font-semibold uppercase tracking-wider">Add to Playlist</p>
+              {playlists.map(p => (
+                <button key={p.id} onClick={() => handleAddToPlaylist(p.id)}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200 truncate">
+                  <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+                  <span className="truncate">{p.name}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {onAdd && (
+            <button onClick={() => { onAdd(track); setMenu(null); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200 border-t border-neutral-700 mt-1">
+              <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+              Add
+            </button>
+          )}
+          {onRemove && (
+            <button onClick={() => { onRemove(track.videoId); setMenu(null); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-red-400 border-t border-neutral-700 mt-1">
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
+              Remove
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -17,13 +17,18 @@ const GENRES = [
 
 export default function Home() {
   const [trending, setTrending] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const { playTrack } = usePlayer();
+  const { playTrack, currentTrack } = usePlayer();
 
   useEffect(() => {
     api.trending().then(setTrending).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    api.getHistory().then(setRecent).catch(() => {});
+  }, [currentTrack?.videoId]);
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -35,6 +40,25 @@ export default function Home() {
   return (
     <div className="p-6">
       <h1 className="text-3xl font-bold mb-6">{greeting()}</h1>
+
+      {recent.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-bold mb-4">Recently played</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {recent.slice(0, 12).map(t => (
+              <button key={t.videoId}
+                onClick={() => playTrack(t, recent)}
+                className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md flex items-center gap-3 pr-3 overflow-hidden transition-colors group text-left">
+                <img src={t.thumbnail} alt="" className="w-14 h-14 object-cover bg-neutral-800 shrink-0" />
+                <div className="font-semibold text-sm truncate flex-1">{t.title}</div>
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity w-9 h-9 rounded-full bg-green-500 flex items-center justify-center text-black shrink-0">
+                  <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-8">
         <h2 className="text-xl font-bold mb-4">Browse by genre</h2>

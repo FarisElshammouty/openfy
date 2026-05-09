@@ -33,6 +33,14 @@ export const api = {
   likeSong: (track) => request('/liked', { method: 'POST', body: JSON.stringify(track) }),
   unlikeSong: (videoId) => request(`/liked/${videoId}`, { method: 'DELETE' }),
 
+  getArtist: (id) => request(`/artist/${id}`),
+  getHistory: () => request('/history'),
+  recordPlay: (track) => fetch(`${API}/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(track)
+  }).catch(() => {}),
+
   streamUrl: (videoId) => `${API}/stream/${videoId}`,
 
   updateDiscordPresence: (data) =>

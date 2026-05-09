@@ -40,11 +40,18 @@ function vid(url) {
   return m ? m[1] : url.replace('/watch?v=', '');
 }
 
+function channelId(url) {
+  if (!url) return null;
+  const m = url.match(/\/channel\/([^/?#]+)/);
+  return m ? m[1] : null;
+}
+
 function mapTrack(item) {
   return {
     videoId: vid(item.url),
     title: item.title || '',
-    artist: item.uploaderName || item.uploader || '',
+    artist: (item.uploaderName || item.uploader || '').replace(/ - Topic$/, ''),
+    artistId: channelId(item.uploaderUrl),
     thumbnail: item.thumbnail || '',
     duration: item.duration || 0
   };
@@ -170,6 +177,100 @@ app.get('/api/suggestions/:videoId', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// ── Artist ──────────────────────────────────────────────────────────
+
+const artistCache = new Map();
+
+app.get('/api/artist/:id', async (req, res) => {
+  const id = req.params.id;
+  const cached = artistCache.get(id);
+  if (cached && Date.now() - cached.ts < 1800000) return res.json(cached.data);
+
+  try {
+    const yt = await getYtClient();
+    const ch = await yt.music.getArtist(id);
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const thumbUrl = (t) => { const arr = thumbArr(t); return arr[arr.length - 1]?.url || arr[0]?.url || ''; };
+    const bigThumb = (t) => thumbArr(t)[0]?.url || '';
+
+    const sectionTitle = (s) => text(s.title) || text(s.header?.title) || '';
+    const sectionByTitle = (titles) => ch.sections?.find(s => titles.includes(sectionTitle(s)));
+
+    const topSongs = (sectionByTitle(['Top songs', 'Songs'])?.contents || []).map(item => ({
+      videoId: item.id,
+      title: text(item.title),
+      artist: (item.artists || []).map(a => a.name).join(', ') || text(ch.header?.title),
+      artistId: id,
+      thumbnail: thumbUrl(item.thumbnail),
+      duration: item.duration?.seconds || 0
+    })).filter(t => t.videoId);
+
+    const albums = (sectionByTitle(['Albums'])?.contents || []).map(item => ({
+      id: item.id,
+      title: text(item.title),
+      year: item.year || '',
+      thumbnail: thumbUrl(item.thumbnail)
+    })).filter(a => a.title);
+
+    const singles = (sectionByTitle(['Singles & EPs', 'Singles'])?.contents || []).map(item => ({
+      id: item.id,
+      title: text(item.title),
+      year: item.year || '',
+      thumbnail: thumbUrl(item.thumbnail)
+    })).filter(a => a.title);
+
+    const related = (sectionByTitle(['Fans might also like', 'Related artists'])?.contents || []).map(item => ({
+      id: item.id,
+      name: text(item.title),
+      thumbnail: thumbUrl(item.thumbnail)
+    })).filter(a => a.name && a.id);
+
+    const data = {
+      id,
+      name: text(ch.header?.title),
+      description: text(ch.header?.description),
+      thumbnail: bigThumb(ch.header?.thumbnail),
+      topSongs: topSongs.slice(0, 10),
+      albums: albums.slice(0, 12),
+      singles: singles.slice(0, 12),
+      related: related.slice(0, 10)
+    };
+
+    artistCache.set(id, { data, ts: Date.now() });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Play history ────────────────────────────────────────────────────
+
+app.post('/api/history', (req, res) => {
+  const { videoId, title, artist, artistId, thumbnail, duration } = req.body;
+  if (!videoId) return res.status(400).json({ error: 'videoId required' });
+  db.prepare(`
+    INSERT INTO play_history (video_id, title, artist, artist_id, thumbnail, duration)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(video_id) DO UPDATE SET
+      play_count = play_count + 1,
+      last_played = datetime('now'),
+      title = excluded.title,
+      artist = excluded.artist,
+      artist_id = excluded.artist_id,
+      thumbnail = excluded.thumbnail,
+      duration = excluded.duration
+  `).run(videoId, title || '', artist || '', artistId || '', thumbnail || '', duration || 0);
+  res.json({ success: true });
+});
+
+app.get('/api/history', (_req, res) => {
+  res.json(db.prepare(`
+    SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, play_count AS playCount, last_played AS lastPlayed
+    FROM play_history ORDER BY last_played DESC LIMIT 30
+  `).all());
 });
 
 // ── Audio stream proxy ──────────────────────────────────────────────

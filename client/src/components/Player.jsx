@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 
 function fmt(s) {
@@ -11,8 +12,9 @@ export default function Player() {
     crossfade, showQueue, showLyrics,
     togglePlay, playNext, playPrev, seek, setVolume, toggleShuffle, toggleRepeat,
     toggleCrossfade, toggleQueue, toggleLyrics,
-    isLiked, toggleLike
+    isLiked, toggleLike, toggleNowPlaying
   } = usePlayer();
+  const navigate = useNavigate();
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
@@ -22,10 +24,15 @@ export default function Player() {
       <div className="flex items-center gap-3 w-[30%] min-w-0">
         {currentTrack ? (
           <>
-            <img src={currentTrack.thumbnail} alt="" className="w-14 h-14 rounded object-cover bg-neutral-800 shrink-0" />
+            <img src={currentTrack.thumbnail} alt="" onClick={toggleNowPlaying}
+              className="w-14 h-14 rounded object-cover bg-neutral-800 shrink-0 cursor-pointer hover:brightness-110 transition-all" title="Open Now Playing" />
             <div className="min-w-0 mr-2">
-              <div className="text-sm font-medium truncate">{currentTrack.title}</div>
-              <div className="text-xs text-neutral-400 truncate">{currentTrack.artist}</div>
+              <div className="text-sm font-medium truncate cursor-pointer hover:underline" onClick={toggleNowPlaying}>{currentTrack.title}</div>
+              <div className="text-xs text-neutral-400 truncate">
+                {currentTrack.artistId ? (
+                  <span onClick={() => navigate(`/artist/${currentTrack.artistId}`)} className="hover:underline hover:text-white cursor-pointer">{currentTrack.artist}</span>
+                ) : currentTrack.artist}
+              </div>
             </div>
             <button onClick={() => toggleLike(currentTrack)}
               className={`shrink-0 transition-colors ${isLiked(currentTrack.videoId) ? 'text-green-500' : 'text-neutral-400 hover:text-white'}`}>
