@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
-import { api } from '../api';
 import { upgradeThumbnail } from '../utils/thumb';
 
 function parseLRC(lrc) {
@@ -15,7 +14,7 @@ function parseLRC(lrc) {
 }
 
 export default function NowPlaying() {
-  const { currentTrack, progress, duration, isPlaying, dominantColor, togglePlay, playNext, playPrev, toggleNowPlaying, seek, isLiked, toggleLike, queue, queueIndex } = usePlayer();
+  const { currentTrack, progress, duration, isPlaying, dominantColor, togglePlay, playNext, playPrev, toggleNowPlaying, seek, isLiked, toggleLike, queue, queueIndex, playTrack, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
   const navigate = useNavigate();
@@ -24,11 +23,11 @@ export default function NowPlaying() {
   useEffect(() => {
     if (!currentTrack) { setSynced([]); setPlain(''); return; }
     setSynced([]); setPlain('');
-    api.getLyrics(currentTrack.title, currentTrack.artist).then(data => {
+    getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
     }).catch(() => {});
-  }, [currentTrack?.videoId]);
+  }, [currentTrack?.videoId, getLyricsCached]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') toggleNowPlaying(); };
@@ -150,13 +149,15 @@ export default function NowPlaying() {
               <h3 className="text-sm font-bold uppercase tracking-wider text-white/70 mb-3">Up next</h3>
               <div className="space-y-2">
                 {upNext.map(t => (
-                  <div key={t.videoId} className="flex items-center gap-3">
-                    <img src={t.thumbnail} alt="" className="w-10 h-10 rounded object-cover bg-neutral-800" />
+                  <button key={t.videoId}
+                    onClick={() => playTrack(t, queue)}
+                    className="w-full flex items-center gap-3 hover:bg-white/10 p-1 rounded transition-colors text-left">
+                    <img src={t.thumbnail} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded object-cover bg-neutral-800" />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium truncate">{t.title}</div>
                       <div className="text-xs text-white/60 truncate">{t.artist}</div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

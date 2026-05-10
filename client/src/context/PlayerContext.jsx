@@ -13,6 +13,10 @@ function extractDominantColor(url) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
+    // Route through our server proxy so the canvas isn't tainted by the YouTube CDN
+    const proxied = url && /^https?:\/\//.test(url) && !url.startsWith(location.origin)
+      ? `/api/img-proxy?url=${encodeURIComponent(url)}`
+      : url;
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
@@ -33,7 +37,7 @@ function extractDominantColor(url) {
       } catch { resolve({ r: 40, g: 40, b: 40 }); }
     };
     img.onerror = () => resolve({ r: 40, g: 40, b: 40 });
-    img.src = url;
+    img.src = proxied;
   });
 }
 
@@ -43,15 +47,23 @@ export function PlayerProvider({ children }) {
   const prevVideoRef = useRef(null);
   const crossfadeStartedRef = useRef(false);
 
-  const [queue, setQueue] = useState([]);
-  const [queueIndex, setQueueIndex] = useState(-1);
+  const loadPref = (key, fallback) => {
+    try { const v = localStorage.getItem(key); return v != null ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  };
+  const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+
+  const lastTrack = loadPref('openfy.lastTrack', null);
+  const [queue, setQueue] = useState(lastTrack ? [lastTrack] : []);
+  const [queueIndex, setQueueIndex] = useState(lastTrack ? 0 : -1);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVol] = useState(0.7);
+  const [volume, setVol] = useState(loadPref('openfy.volume', 0.7));
   const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(lastTrack?.duration || 0);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off');
-  const [crossfade, setCrossfade] = useState(true);
+  const [crossfade, setCrossfade] = useState(loadPref('openfy.crossfade', false));
+  const initialLoadRef = useRef(!!lastTrack); // suppress autoplay on initial restore
   const [likedIds, setLikedIds] = useState(new Set());
   const [playlists, setPlaylists] = useState([]);
   const [dominantColor, setDominantColor] = useState(null);
@@ -63,6 +75,12 @@ export function PlayerProvider({ children }) {
   const [playbackRate, setPlaybackRateState] = useState(1);
   const [sleepTimer, setSleepTimer] = useState(null); // { endTime, mode: 'time' | 'end-of-track' }
   const sleepTimerRef = useRef(null);
+  const lyricsCacheRef = useRef(new Map()); // videoId -> { synced, plain, notFound }
+  const listenedSecondsRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const recordedRef = useRef(false); // recorded play to history (>=30s threshold)
+  const stuckTimerRef = useRef(null);
+  const stuckCheckRef = useRef({ lastProgress: 0, stuckSince: 0 });
 
   const sr = useRef({ queue: [], shuffle: false, repeat: 'off' });
   sr.current = { queue, shuffle, repeat };
@@ -147,6 +165,10 @@ export function PlayerProvider({ children }) {
     const prev = prevVideoRef.current;
     prevVideoRef.current = currentTrack.videoId;
     crossfadeStartedRef.current = false;
+    listenedSecondsRef.current = 0;
+    lastTimeRef.current = 0;
+    recordedRef.current = false;
+    stuckCheckRef.current = { lastProgress: 0, stuckSince: 0 };
 
     // Pre-seed duration from track metadata so the progress bar isn't 0:00 while streaming
     if (currentTrack.duration > 0) setDuration(currentTrack.duration);
@@ -156,20 +178,24 @@ export function PlayerProvider({ children }) {
     if (fadeOutRef.current) {
       clearInterval(fadeOutRef.current.timer);
       fadeOutRef.current.audio.pause();
-      fadeOutRef.current.audio.src = '';
+      try { fadeOutRef.current.audio.removeAttribute('src'); fadeOutRef.current.audio.load(); } catch {}
       fadeOutRef.current = null;
     }
 
-    const shouldCrossfade = crossfadeRef.current && prev && prev !== currentTrack.videoId && !a.paused;
+    const newSrc = api.streamUrl(currentTrack.videoId);
+    // Capture the OLD audio src for the fade-out clone (before we reassign `a.src`)
+    const oldSrc = a.src;
+    const shouldCrossfade = crossfadeRef.current && prev && prev !== currentTrack.videoId && !a.paused && oldSrc;
 
     if (shouldCrossfade) {
-      const fadeAudio = new Audio(a.src);
+      const fadeAudio = new Audio();
+      fadeAudio.src = oldSrc;
       const fadeStartVol = a.volume;
       fadeAudio.currentTime = a.currentTime;
       fadeAudio.volume = fadeStartVol;
       fadeAudio.play().catch(() => {});
 
-      a.src = api.streamUrl(currentTrack.videoId);
+      a.src = newSrc;
       a.volume = 0;
       a.play().catch(() => {});
 
@@ -184,14 +210,17 @@ export function PlayerProvider({ children }) {
         if (step >= steps) {
           clearInterval(timer);
           fadeAudio.pause();
-          fadeAudio.src = '';
+          try { fadeAudio.removeAttribute('src'); fadeAudio.load(); } catch {}
           fadeOutRef.current = null;
         }
       }, stepTime);
       fadeOutRef.current = { audio: fadeAudio, timer };
     } else {
-      a.src = api.streamUrl(currentTrack.videoId);
-      a.play().catch(() => {});
+      a.src = newSrc;
+      if (!initialLoadRef.current) {
+        a.play().catch(() => {});
+      }
+      initialLoadRef.current = false;
     }
 
     if ('mediaSession' in navigator) {
@@ -200,18 +229,82 @@ export function PlayerProvider({ children }) {
         artwork: currentTrack.thumbnail ? [{ src: currentTrack.thumbnail, sizes: '512x512', type: 'image/jpeg' }] : []
       });
     }
-
-    api.recordPlay({
-      videoId: currentTrack.videoId,
-      title: currentTrack.title,
-      artist: currentTrack.artist,
-      artistId: currentTrack.artistId,
-      thumbnail: currentTrack.thumbnail,
-      duration: currentTrack.duration
-    });
   }, [currentTrack?.videoId]);
 
-  useEffect(() => { audioRef.current.volume = volume; }, [volume]);
+  // Track listened seconds + record play after 30s threshold
+  useEffect(() => {
+    if (!currentTrack) return;
+    const a = audioRef.current;
+    const tick = () => {
+      if (!a.paused) {
+        const now = a.currentTime;
+        const last = lastTimeRef.current;
+        // Only count forward progress (ignore seeks); cap delta at 1.5s to avoid jumps
+        if (now > last && now - last < 1.5) {
+          listenedSecondsRef.current += (now - last);
+        }
+        lastTimeRef.current = now;
+      }
+      // Record after 30s of actual listening
+      if (!recordedRef.current && listenedSecondsRef.current >= 30) {
+        recordedRef.current = true;
+        api.recordPlay({
+          videoId: currentTrack.videoId,
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          artistId: currentTrack.artistId,
+          thumbnail: currentTrack.thumbnail,
+          duration: a.duration || currentTrack.duration || 0,
+          listenedSeconds: 30
+        });
+      }
+    };
+    const id = setInterval(tick, 1000);
+    return () => {
+      clearInterval(id);
+      // On unmount/track change, send any extra listened seconds beyond 30
+      if (recordedRef.current && listenedSecondsRef.current > 30) {
+        api.recordPlay({
+          videoId: currentTrack.videoId,
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          artistId: currentTrack.artistId,
+          thumbnail: currentTrack.thumbnail,
+          duration: a.duration || currentTrack.duration || 0,
+          listenedSeconds: listenedSecondsRef.current,
+          incremental: true
+        });
+      }
+    };
+  }, [currentTrack?.videoId]);
+
+  // Auto-skip if stream stalls (progress doesn't advance for 20s while supposedly playing)
+  useEffect(() => {
+    if (!currentTrack) return;
+    const a = audioRef.current;
+    if (stuckTimerRef.current) clearInterval(stuckTimerRef.current);
+    stuckTimerRef.current = setInterval(() => {
+      if (a.paused) { stuckCheckRef.current.stuckSince = 0; return; }
+      const now = Date.now();
+      if (a.currentTime === stuckCheckRef.current.lastProgress) {
+        if (!stuckCheckRef.current.stuckSince) stuckCheckRef.current.stuckSince = now;
+        if (now - stuckCheckRef.current.stuckSince > 20000) {
+          // 20s stuck — give up and skip
+          console.warn('[Openfy] stream stuck, skipping');
+          playNext();
+          stuckCheckRef.current.stuckSince = 0;
+        }
+      } else {
+        stuckCheckRef.current.lastProgress = a.currentTime;
+        stuckCheckRef.current.stuckSince = 0;
+      }
+    }, 2000);
+    return () => clearInterval(stuckTimerRef.current);
+  }, [currentTrack?.videoId]);
+
+  useEffect(() => { audioRef.current.volume = volume; savePref('openfy.volume', volume); }, [volume]);
+  useEffect(() => { savePref('openfy.crossfade', crossfade); }, [crossfade]);
+  useEffect(() => { savePref('openfy.lastTrack', currentTrack || null); }, [currentTrack]);
 
   // Media Session handlers + position state
   useEffect(() => {
@@ -287,6 +380,12 @@ export function PlayerProvider({ children }) {
       } else if (e.code === 'ArrowDown' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setVolume(v => Math.max(0, v - 0.05));
+      } else if (e.code === 'KeyQ' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        toggleQueue();
+      } else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        toggleLyrics();
       }
     };
     window.addEventListener('keydown', handleKey);
@@ -366,14 +465,28 @@ export function PlayerProvider({ children }) {
     });
   }, []);
 
-  const clearQueue = useCallback(() => { audioRef.current.pause(); audioRef.current.src = ''; setQueue([]); setQueueIndex(-1); setProgress(0); setDuration(0); }, []);
+  const clearQueue = useCallback(() => {
+    const a = audioRef.current;
+    a.pause();
+    try { a.removeAttribute('src'); a.load(); } catch {}
+    setQueue([]); setQueueIndex(-1); setProgress(0); setDuration(0);
+  }, []);
   const toggleShuffle = useCallback(() => setShuffle(p => !p), []);
   const toggleRepeat = useCallback(() => setRepeat(p => p === 'off' ? 'all' : p === 'all' ? 'one' : 'off'), []);
   const toggleCrossfade = useCallback(() => setCrossfade(p => !p), []);
   const toggleQueue = useCallback(() => { setShowQueue(p => !p); if (!showQueue) setShowLyrics(false); }, [showQueue]);
-  const toggleLyrics = useCallback(() => { setShowLyrics(p => !p); if (!showLyrics) setShowQueue(false); }, [showLyrics]);
-  const toggleNowPlaying = useCallback(() => { setShowNowPlaying(p => !p); }, []);
-  const toggleKaraoke = useCallback(() => { setShowKaraoke(p => !p); }, []);
+  const toggleLyrics = useCallback(() => {
+    setShowLyrics(p => !p);
+    if (!showLyrics) { setShowQueue(false); setShowNowPlaying(false); setShowKaraoke(false); }
+  }, [showLyrics]);
+  const toggleNowPlaying = useCallback(() => {
+    setShowNowPlaying(p => !p);
+    if (!showNowPlaying) { setShowLyrics(false); setShowKaraoke(false); }
+  }, [showNowPlaying]);
+  const toggleKaraoke = useCallback(() => {
+    setShowKaraoke(p => !p);
+    if (!showKaraoke) { setShowLyrics(false); setShowNowPlaying(false); }
+  }, [showKaraoke]);
 
   const toggleMiniPlayer = useCallback(() => {
     setMiniPlayer(p => {
@@ -398,10 +511,10 @@ export function PlayerProvider({ children }) {
       return;
     }
     if (mode === 'end-of-track') {
-      setSleepTimer({ endTime: null, mode: 'end-of-track' });
+      setSleepTimer({ endTime: null, mode: 'end-of-track', preset: null });
     } else {
       const endTime = Date.now() + minutes * 60000;
-      setSleepTimer({ endTime, mode: 'time' });
+      setSleepTimer({ endTime, mode: 'time', preset: minutes });
       sleepTimerRef.current = setTimeout(() => {
         audioRef.current.pause();
         setSleepTimer(null);
@@ -423,6 +536,18 @@ export function PlayerProvider({ children }) {
 
   const refreshPlaylists = useCallback(async () => { setPlaylists(await api.getPlaylists()); }, []);
 
+  // Shared lyrics cache so Lyrics/NowPlaying/Karaoke don't all re-fetch
+  const getLyricsCached = useCallback((track) => {
+    if (!track) return Promise.resolve({ syncedLyrics: null, plainLyrics: null });
+    const cache = lyricsCacheRef.current;
+    const cached = cache.get(track.videoId);
+    if (cached) return Promise.resolve(cached);
+    return api.getLyrics(track.title, track.artist).then(data => {
+      cache.set(track.videoId, data);
+      return data;
+    });
+  }, []);
+
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
@@ -432,7 +557,7 @@ export function PlayerProvider({ children }) {
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
       toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
       setPlaybackRate, startSleepTimer,
-      isLiked, toggleLike, playlists, refreshPlaylists
+      isLiked, toggleLike, playlists, refreshPlaylists, getLyricsCached
     }}>
       {children}
     </Ctx.Provider>

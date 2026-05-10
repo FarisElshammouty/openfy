@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePlayer } from '../context/PlayerContext';
-import { api } from '../api';
 
 function parseLRC(lrc) {
   if (!lrc) return [];
@@ -13,7 +12,7 @@ function parseLRC(lrc) {
 }
 
 export default function Karaoke() {
-  const { currentTrack, progress, seek, dominantColor, toggleKaraoke, togglePlay, isPlaying } = usePlayer();
+  const { currentTrack, progress, seek, dominantColor, toggleKaraoke, togglePlay, isPlaying, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
   const activeRef = useRef(null);
@@ -21,11 +20,11 @@ export default function Karaoke() {
   useEffect(() => {
     if (!currentTrack) return;
     setSynced([]); setPlain('');
-    api.getLyrics(currentTrack.title, currentTrack.artist).then(data => {
+    getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
     }).catch(() => {});
-  }, [currentTrack?.videoId]);
+  }, [currentTrack?.videoId, getLyricsCached]);
 
   useEffect(() => {
     const onKey = (e) => {

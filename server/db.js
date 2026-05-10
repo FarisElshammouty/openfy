@@ -47,7 +47,20 @@ db.exec(`
     thumbnail TEXT DEFAULT '',
     duration REAL DEFAULT 0,
     play_count INTEGER DEFAULT 1,
+    listened_seconds REAL DEFAULT 0,
     last_played TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS artist_meta (
+    artist_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    thumbnail TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS recent_searches (
+    query TEXT PRIMARY KEY,
+    last_searched TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS saved_albums (
@@ -62,6 +75,15 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_pt_playlist ON playlist_tracks(playlist_id);
   CREATE INDEX IF NOT EXISTS idx_history_played ON play_history(last_played DESC);
+  CREATE INDEX IF NOT EXISTS idx_recent_searched ON recent_searches(last_searched DESC);
 `);
+
+// Migrate: add listened_seconds column if missing (for existing DBs)
+try {
+  const cols = db.prepare("PRAGMA table_info(play_history)").all();
+  if (!cols.some(c => c.name === 'listened_seconds')) {
+    db.exec(`ALTER TABLE play_history ADD COLUMN listened_seconds REAL DEFAULT 0`);
+  }
+} catch {}
 
 export default db;

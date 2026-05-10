@@ -156,6 +156,31 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+app.get('/api/recent-searches', (_req, res) => {
+  res.json(db.prepare('SELECT query FROM recent_searches ORDER BY last_searched DESC LIMIT 10').all().map(r => r.query));
+});
+
+app.post('/api/recent-searches', (req, res) => {
+  const q = (req.body?.query || '').trim();
+  if (!q || q.length > 200) return res.json({ success: false });
+  db.prepare(`
+    INSERT INTO recent_searches (query) VALUES (?)
+    ON CONFLICT(query) DO UPDATE SET last_searched = datetime('now')
+  `).run(q);
+  // Keep only the most recent 30
+  db.prepare(`
+    DELETE FROM recent_searches WHERE query NOT IN (
+      SELECT query FROM recent_searches ORDER BY last_searched DESC LIMIT 30
+    )
+  `).run();
+  res.json({ success: true });
+});
+
+app.delete('/api/recent-searches', (_req, res) => {
+  db.prepare('DELETE FROM recent_searches').run();
+  res.json({ success: true });
+});
+
 app.get('/api/search/artists', async (req, res) => {
   try {
     const { q } = req.query;
@@ -241,7 +266,13 @@ app.get('/api/trending', async (_req, res) => {
 app.get('/api/suggestions/:videoId', async (req, res) => {
   try {
     const data = await piped(`/streams/${req.params.videoId}`);
-    res.json((data.relatedStreams || []).filter(i => i.duration > 30 && i.duration < 600).slice(0, 25).map(mapTrack).filter(t => t.videoId));
+    // Don't filter out -1 durations; just exclude obvious live streams (>10min) and shorts (<30s when known)
+    const items = (data.relatedStreams || []).filter(i => {
+      if (i.duration > 600) return false;
+      if (i.duration > 0 && i.duration < 30) return false;
+      return true;
+    });
+    res.json(items.slice(0, 25).map(mapTrack).filter(t => t.videoId));
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -308,6 +339,16 @@ app.get('/api/artist/:id', async (req, res) => {
     };
 
     artistCache.set(id, { data, ts: Date.now() });
+    // Save artist photo for stats top-artists display
+    if (data.name && data.thumbnail) {
+      try {
+        db.prepare(`
+          INSERT INTO artist_meta (artist_id, name, thumbnail)
+          VALUES (?, ?, ?)
+          ON CONFLICT(artist_id) DO UPDATE SET name=excluded.name, thumbnail=excluded.thumbnail, updated_at=datetime('now')
+        `).run(id, data.name, data.thumbnail);
+      } catch {}
+    }
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -374,20 +415,35 @@ app.get('/api/album/:id', async (req, res) => {
 // ── Play history ────────────────────────────────────────────────────
 
 app.post('/api/history', (req, res) => {
-  const { videoId, title, artist, artistId, thumbnail, duration } = req.body;
+  const { videoId, title, artist, artistId, thumbnail, duration, listenedSeconds, incremental } = req.body;
   if (!videoId) return res.status(400).json({ error: 'videoId required' });
-  db.prepare(`
-    INSERT INTO play_history (video_id, title, artist, artist_id, thumbnail, duration)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(video_id) DO UPDATE SET
-      play_count = play_count + 1,
-      last_played = datetime('now'),
-      title = excluded.title,
-      artist = excluded.artist,
-      artist_id = excluded.artist_id,
-      thumbnail = excluded.thumbnail,
-      duration = excluded.duration
-  `).run(videoId, title || '', artist || '', artistId || '', thumbnail || '', duration || 0);
+  const ls = Number.isFinite(listenedSeconds) ? listenedSeconds : 0;
+
+  if (incremental) {
+    // Update only listened_seconds (don't bump play_count again)
+    db.prepare(`
+      UPDATE play_history SET listened_seconds = ? WHERE video_id = ?
+    `).run(ls, videoId);
+  } else {
+    db.prepare(`
+      INSERT INTO play_history (video_id, title, artist, artist_id, thumbnail, duration, listened_seconds)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(video_id) DO UPDATE SET
+        play_count = play_count + 1,
+        last_played = datetime('now'),
+        listened_seconds = listened_seconds + excluded.listened_seconds,
+        title = excluded.title,
+        artist = excluded.artist,
+        artist_id = excluded.artist_id,
+        thumbnail = excluded.thumbnail,
+        duration = excluded.duration
+    `).run(videoId, title || '', artist || '', artistId || '', thumbnail || '', duration || 0, ls);
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/history', (_req, res) => {
+  db.prepare('DELETE FROM play_history').run();
   res.json({ success: true });
 });
 
@@ -412,24 +468,19 @@ app.get('/api/mixes', async (_req, res) => {
       GROUP BY artist_id ORDER BY plays DESC LIMIT 5
     `).all();
 
-    if (!topArtists.length) {
-      return res.json({ mixes: [] });
-    }
-
     const yt = await getYtClient();
     const text = (v) => typeof v === 'string' ? v : (v?.text || '');
     const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
     const thumbUrl = (t) => { const a = thumbArr(t); return a[a.length - 1]?.url || a[0]?.url || ''; };
     const sectionTitle = (s) => text(s.title) || text(s.header?.title) || '';
 
-    const mixes = [];
-    for (const seed of topArtists.slice(0, 3)) {
+    // Build a single artist-based mix in parallel
+    async function buildArtistMix(seed) {
       try {
         const ch = await yt.music.getArtist(seed.artistId);
         const top = ch.sections?.find(s => sectionTitle(s) === 'Top songs');
         const related = ch.sections?.find(s => sectionTitle(s) === 'Fans might also like');
 
-        // Pull seed's top 3 songs + 1-2 from each of 3 related artists
         const tracks = [];
         for (const item of (top?.contents || []).slice(0, 3)) {
           if (item.id) tracks.push({
@@ -442,39 +493,80 @@ app.get('/api/mixes', async (_req, res) => {
           });
         }
 
-        const relatedArtists = (related?.contents || []).slice(0, 4);
-        for (const ra of relatedArtists) {
-          if (!ra.id) continue;
+        // Parallel-fetch related artists' top songs
+        const relatedArtists = (related?.contents || []).slice(0, 4).filter(r => r.id);
+        const relTopLists = await Promise.all(relatedArtists.map(async ra => {
           try {
             const rch = await yt.music.getArtist(ra.id);
             const rtop = rch.sections?.find(s => sectionTitle(s) === 'Top songs');
-            for (const item of (rtop?.contents || []).slice(0, 2)) {
-              if (item.id) tracks.push({
-                videoId: item.id,
-                title: text(item.title),
-                artist: (item.artists || []).map(a => a.name).join(', ') || text(ra.title),
-                artistId: ra.id,
-                thumbnail: thumbUrl(item.thumbnail),
-                duration: 0
-              });
-            }
-          } catch {}
+            return { ra, items: rtop?.contents || [] };
+          } catch { return { ra, items: [] }; }
+        }));
+
+        for (const { ra, items } of relTopLists) {
+          for (const item of items.slice(0, 2)) {
+            if (item.id) tracks.push({
+              videoId: item.id,
+              title: text(item.title),
+              artist: (item.artists || []).map(a => a.name).join(', ') || text(ra.title),
+              artistId: ra.id,
+              thumbnail: thumbUrl(item.thumbnail),
+              duration: 0
+            });
+          }
         }
 
-        // Shuffle the tracks for variety
         for (let i = tracks.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
         }
 
-        mixes.push({
+        return {
           id: `mix-${seed.artistId}`,
           name: `${seed.artist} Mix`,
           subtitle: `Inspired by ${seed.artist} and similar artists`,
           thumbnail: seed.thumbnail,
           tracks: tracks.slice(0, 20)
-        });
-      } catch {}
+        };
+      } catch { return null; }
+    }
+
+    // Fallback: a discovery mix from "Trending" if user has 0 or 1 strong artists
+    async function buildDiscoveryMix() {
+      try {
+        const explore = await yt.music.getExplore();
+        const trending = explore.sections?.find(s => sectionTitle(s) === 'Trending');
+        const tracks = (trending?.contents || []).map(item => ({
+          videoId: item.id,
+          title: text(item.title),
+          artist: (item.artists || []).map(a => a.name).join(', '),
+          artistId: item.artists?.[0]?.channel_id || '',
+          thumbnail: thumbUrl(item.thumbnail),
+          duration: item.duration?.seconds || 0
+        })).filter(t => t.videoId);
+        for (let i = tracks.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+        }
+        if (!tracks.length) return null;
+        return {
+          id: 'mix-discover',
+          name: 'Discover Mix',
+          subtitle: 'Fresh picks from trending music',
+          thumbnail: tracks[0]?.thumbnail || '',
+          tracks: tracks.slice(0, 20)
+        };
+      } catch { return null; }
+    }
+
+    // Build artist mixes (up to 3) in parallel
+    const artistMixes = (await Promise.all(topArtists.slice(0, 3).map(buildArtistMix))).filter(Boolean);
+
+    // Add fallback discovery mix if user has few or no artist mixes
+    const mixes = [...artistMixes];
+    if (mixes.length < 2) {
+      const discovery = await buildDiscoveryMix();
+      if (discovery) mixes.push(discovery);
     }
 
     const data = { mixes };
@@ -488,21 +580,29 @@ app.get('/api/mixes', async (_req, res) => {
 app.get('/api/stats', (_req, res) => {
   const topTracks = db.prepare(`
     SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, play_count AS playCount
-    FROM play_history ORDER BY play_count DESC, last_played DESC LIMIT 10
+    FROM play_history WHERE play_count > 0 ORDER BY play_count DESC, last_played DESC LIMIT 10
   `).all();
 
+  // Top artists: prefer artist_meta photo when we have one
   const topArtists = db.prepare(`
-    SELECT artist, artist_id AS artistId, MAX(thumbnail) AS thumbnail,
-           SUM(play_count) AS plays, COUNT(*) AS uniqueTracks
-    FROM play_history WHERE artist != ''
-    GROUP BY artist ORDER BY plays DESC LIMIT 10
+    SELECT
+      h.artist,
+      h.artist_id AS artistId,
+      COALESCE(m.thumbnail, MAX(h.thumbnail)) AS thumbnail,
+      SUM(h.play_count) AS plays,
+      COUNT(*) AS uniqueTracks
+    FROM play_history h
+    LEFT JOIN artist_meta m ON m.artist_id = h.artist_id
+    WHERE h.artist != ''
+    GROUP BY h.artist ORDER BY plays DESC LIMIT 10
   `).all();
 
+  // Total seconds from actual listening, falling back to duration*play_count for old rows
   const totals = db.prepare(`
     SELECT
       SUM(play_count) AS totalPlays,
       COUNT(*) AS uniqueTracks,
-      SUM(duration * play_count) AS totalSeconds
+      SUM(CASE WHEN listened_seconds > 0 THEN listened_seconds ELSE duration * play_count END) AS totalSeconds
     FROM play_history
   `).get();
 
@@ -631,21 +731,55 @@ app.get('/api/stream/:videoId', async (req, res) => {
     const segments = plText.split('\n').filter(l => l.startsWith('https://'));
     if (!segments.length) throw new Error('No segments in HLS playlist');
 
-    const chunks = await Promise.all(segments.map(async (segUrl) => {
-      const segRes = await fetch(segUrl, { signal: AbortSignal.timeout(15000) });
-      if (!segRes.ok) return null;
-      return Buffer.from(await segRes.arrayBuffer());
-    }));
-    const body = Buffer.concat(chunks.filter(Boolean));
-
+    // Stream segments as they arrive — first chunks are sent ASAP, rest pre-fetched in parallel
     res.status(200);
     res.set('content-type', 'audio/aac');
-    res.set('content-length', String(body.length));
-    res.set('accept-ranges', 'bytes');
-    res.end(body);
+    res.set('accept-ranges', 'none');
+
+    // Concurrent prefetch: launch all fetches up-front, but write in order
+    const segPromises = segments.map(segUrl =>
+      fetch(segUrl, { signal: AbortSignal.timeout(15000) })
+        .then(r => r.ok ? r.arrayBuffer() : null)
+        .catch(() => null)
+    );
+
+    for (let i = 0; i < segPromises.length; i++) {
+      if (res.writableEnded) break;
+      try {
+        const buf = await segPromises[i];
+        if (buf) {
+          if (!res.write(Buffer.from(buf))) {
+            // Backpressure: wait for drain
+            await new Promise(resolve => res.once('drain', resolve));
+          }
+        }
+      } catch {}
+    }
+    res.end();
     return;
   } catch (err) {
     if (!res.headersSent) res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Image proxy (for color extraction with CORS) ────────────────────
+
+app.get('/api/img-proxy', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).end();
+  try {
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': '' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) return res.status(r.status).end();
+    res.set('content-type', r.headers.get('content-type') || 'image/jpeg');
+    res.set('cache-control', 'public, max-age=86400');
+    res.set('access-control-allow-origin', '*');
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.send(buf);
+  } catch {
+    res.status(502).end();
   }
 });
 

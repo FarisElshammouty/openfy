@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { usePlayer } from '../context/PlayerContext';
 import TrackRow from './TrackRow';
 
 export default function Stats() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { currentTrack } = usePlayer();
+  const [confirmClear, setConfirmClear] = useState(false);
 
-  useEffect(() => {
+  const refresh = () => {
+    setLoading(true);
     api.getStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
-  }, [currentTrack?.videoId]);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const handleClearHistory = async () => {
+    await api.clearHistory();
+    setConfirmClear(false);
+    refresh();
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center py-32">
@@ -33,7 +41,21 @@ export default function Stats() {
 
   return (
     <div className="p-6 pt-16">
-      <h1 className="text-3xl font-bold mb-6">Your stats</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Your stats</h1>
+        {confirmClear ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-300">Clear all history?</span>
+            <button onClick={handleClearHistory} className="bg-red-500 hover:bg-red-400 text-white text-sm font-medium py-1.5 px-4 rounded-full transition-colors">Yes, clear</button>
+            <button onClick={() => setConfirmClear(false)} className="bg-neutral-700 hover:bg-neutral-600 text-white text-sm font-medium py-1.5 px-4 rounded-full transition-colors">Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmClear(true)}
+            className="text-neutral-400 hover:text-red-400 text-sm transition-colors">
+            Clear history
+          </button>
+        )}
+      </div>
 
       {/* Big numbers */}
       <div className="grid grid-cols-3 gap-4 mb-10">
@@ -79,18 +101,17 @@ export default function Stats() {
         </section>
       )}
 
-      {/* Top tracks */}
+      {/* Top tracks — TrackRow already shows index column, so we use plays as suffix */}
       {stats.topTracks?.length > 0 && (
         <section>
           <h2 className="text-xl font-bold mb-4">Top tracks</h2>
           <div className="space-y-0.5">
             {stats.topTracks.map((t, i) => (
               <div key={t.videoId} className="flex items-center gap-2">
-                <div className="text-2xl font-black text-neutral-500 w-8 text-center">{i + 1}</div>
                 <div className="flex-1 min-w-0">
                   <TrackRow track={t} index={i} tracks={stats.topTracks} />
                 </div>
-                <div className="text-xs text-neutral-400 w-20 text-right">{t.playCount} plays</div>
+                <div className="text-xs text-neutral-400 w-20 text-right shrink-0 pr-2">{t.playCount} plays</div>
               </div>
             ))}
           </div>

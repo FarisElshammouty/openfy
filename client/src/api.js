@@ -43,6 +43,15 @@ export const api = {
   getHistory: () => request('/history'),
   getStats: () => request('/stats'),
   getMixes: () => request('/mixes'),
+  clearHistory: () => request('/history', { method: 'DELETE' }),
+  getRecentSearches: () => request('/recent-searches'),
+  saveRecentSearch: (query) => fetch(`${API}/recent-searches`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query })
+  }).catch(() => {}),
+  clearRecentSearches: () => request('/recent-searches', { method: 'DELETE' }),
+  imgProxyUrl: (url) => `${API}/img-proxy?url=${encodeURIComponent(url)}`,
   importPlaylist: (url) => request('/import-playlist', { method: 'POST', body: JSON.stringify({ url }) }),
   recordPlay: (track) => fetch(`${API}/history`, {
     method: 'POST',

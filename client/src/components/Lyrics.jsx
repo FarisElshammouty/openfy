@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePlayer } from '../context/PlayerContext';
-import { api } from '../api';
 
 function parseLRC(lrc) {
   if (!lrc) return [];
@@ -13,7 +12,7 @@ function parseLRC(lrc) {
 }
 
 export default function Lyrics() {
-  const { currentTrack, progress, toggleLyrics, seek } = usePlayer();
+  const { currentTrack, progress, toggleLyrics, seek, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,12 +23,12 @@ export default function Lyrics() {
   useEffect(() => {
     if (!currentTrack) { setSynced([]); setPlain(''); return; }
     setSynced([]); setPlain(''); setNotFound(false); setLoading(true);
-    api.getLyrics(currentTrack.title, currentTrack.artist).then(data => {
+    getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
       else setNotFound(true);
     }).catch(() => setNotFound(true)).finally(() => setLoading(false));
-  }, [currentTrack?.videoId]);
+  }, [currentTrack?.videoId, getLyricsCached]);
 
   const currentLine = synced.reduce((acc, line, i) => (progress >= line.time ? i : acc), -1);
 

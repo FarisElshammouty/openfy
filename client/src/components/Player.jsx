@@ -142,8 +142,7 @@ export default function Player() {
                 <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">Sleep timer</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[5, 15, 30, 60, 90].map(m => {
-                    const active = sleepTimer?.mode === 'time' && sleepTimer.endTime &&
-                      Math.abs((sleepTimer.endTime - Date.now()) / 60000 - m) < 0.5;
+                    const active = sleepTimer?.mode === 'time' && sleepTimer.preset === m;
                     return (
                       <button key={m} onClick={() => startSleepTimer(m)}
                         className={`text-xs py-1.5 rounded ${active ? 'bg-green-500 text-black font-semibold' : 'bg-neutral-700 hover:bg-neutral-600 text-white'}`}>
@@ -157,10 +156,22 @@ export default function Player() {
                   </button>
                 </div>
                 {sleepTimer && (
-                  <button onClick={() => startSleepTimer(null)}
-                    className="w-full mt-2 text-xs py-1.5 rounded bg-red-900/50 hover:bg-red-900 text-red-200">
-                    Cancel sleep timer
-                  </button>
+                  <>
+                    {sleepTimer.mode === 'time' && sleepTimer.endTime && (
+                      <div className="text-xs text-neutral-400 mt-2 text-center tabular-nums">
+                        Pausing in {Math.max(0, Math.ceil((sleepTimer.endTime - Date.now()) / 60000))} min
+                      </div>
+                    )}
+                    {sleepTimer.mode === 'end-of-track' && (
+                      <div className="text-xs text-neutral-400 mt-2 text-center">
+                        Pausing at end of current track
+                      </div>
+                    )}
+                    <button onClick={() => startSleepTimer(null)}
+                      className="w-full mt-2 text-xs py-1.5 rounded bg-red-900/50 hover:bg-red-900 text-red-200">
+                      Cancel sleep timer
+                    </button>
+                  </>
                 )}
               </div>
               <div className="border-t border-neutral-700 my-2" />

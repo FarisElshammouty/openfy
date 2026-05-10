@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import TrackRow from './TrackRow';
 
@@ -8,6 +8,9 @@ const TABS = [
   { key: 'artists', label: 'Artists' },
   { key: 'albums', label: 'Albums' }
 ];
+
+// Module-level scroll cache so scroll position survives tab switches
+const scrollCache = { songs: 0, artists: 0, albums: 0 };
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,10 +22,34 @@ export default function Search() {
   const [artists, setArtists] = useState(null);
   const [albums, setAlbums] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [recents, setRecents] = useState([]);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
+  const navigate = useNavigate();
+  const scrollSavedRef = useRef(tab);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    inputRef.current?.focus();
+    api.getRecentSearches().then(setRecents).catch(() => {});
+  }, []);
+
+  // Save scroll on tab switch + restore on tab change
+  useEffect(() => {
+    return () => {
+      // Save scroll for current tab when unmounting/changing
+      const main = document.querySelector('main');
+      if (main) scrollCache[scrollSavedRef.current] = main.scrollTop;
+    };
+  }, []);
+  useEffect(() => {
+    const main = document.querySelector('main');
+    if (!main) return;
+    // Save the scroll for the previous tab
+    scrollCache[scrollSavedRef.current] = main.scrollTop;
+    scrollSavedRef.current = tab;
+    // Restore for new tab
+    requestAnimationFrame(() => { main.scrollTop = scrollCache[tab] || 0; });
+  }, [tab]);
 
   function doSearch(q, t) {
     if (!q.trim()) {
@@ -53,13 +80,21 @@ export default function Search() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) { setSongs(null); setArtists(null); setAlbums(null); return; }
     debounceRef.current = setTimeout(() => {
-      const params = { q: query.trim() };
+      const trimmed = query.trim();
+      const params = { q: trimmed };
       if (tab !== 'songs') params.tab = tab;
       setSearchParams(params, { replace: true });
-      doSearch(query.trim(), tab);
+      doSearch(trimmed, tab);
+      // Save the search to recents (only after 2s of no typing — handled by debounce)
+      api.saveRecentSearch(trimmed);
     }, 400);
     return () => clearTimeout(debounceRef.current);
   }, [query, tab]);
+
+  const clearRecents = async () => {
+    await api.clearRecentSearches();
+    setRecents([]);
+  };
 
   const results = tab === 'artists' ? artists : tab === 'albums' ? albums : songs;
   const hasResults = results?.items?.length > 0;
@@ -96,8 +131,25 @@ export default function Search() {
 
       {loading && <div className="text-neutral-500 py-12 text-center">Searching...</div>}
 
-      {!loading && !query && (
+      {!loading && !query && recents.length === 0 && (
         <div className="text-neutral-500 py-20 text-center text-lg">Search for songs, artists, or albums</div>
+      )}
+
+      {!loading && !query && recents.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold">Recent searches</h2>
+            <button onClick={clearRecents} className="text-xs text-neutral-400 hover:text-white">Clear all</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recents.map(q => (
+              <button key={q} onClick={() => setQuery(q)}
+                className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm px-3 py-1.5 rounded-full transition-colors">
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {!loading && query && !hasResults && (

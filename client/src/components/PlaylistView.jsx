@@ -14,6 +14,7 @@ export default function PlaylistView() {
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const debounceRef = useRef(null);
 
   useEffect(() => { load(); }, [id]);
@@ -77,8 +78,10 @@ export default function PlaylistView() {
     <div>
       {/* Header */}
       <div className="flex items-end gap-6 p-6 pt-16 bg-gradient-to-b from-neutral-800/60 to-neutral-900">
-        <div className="w-48 h-48 bg-neutral-800 rounded-lg shadow-2xl flex items-center justify-center shrink-0">
-          <svg className="w-16 h-16 text-neutral-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+        <div className="w-48 h-48 bg-neutral-800 rounded-lg shadow-2xl flex items-center justify-center shrink-0 overflow-hidden">
+          {playlist.tracks?.[0]?.thumbnail
+            ? <img src={playlist.tracks[0].thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+            : <svg className="w-16 h-16 text-neutral-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium uppercase tracking-wider text-neutral-300">Playlist</p>
@@ -91,7 +94,16 @@ export default function PlaylistView() {
               {playlist.name}
             </h1>
           )}
-          <p className="text-sm text-neutral-400">{playlist.tracks.length} songs</p>
+          <p className="text-sm text-neutral-400">
+            {playlist.tracks.length} song{playlist.tracks.length === 1 ? '' : 's'}
+            {(() => {
+              const total = playlist.tracks.reduce((s, t) => s + (t.duration || 0), 0);
+              if (!total) return '';
+              const h = Math.floor(total / 3600);
+              const m = Math.floor((total % 3600) / 60);
+              return ` · ${h > 0 ? `${h} hr ` : ''}${m} min`;
+            })()}
+          </p>
         </div>
       </div>
 
@@ -103,9 +115,17 @@ export default function PlaylistView() {
             <svg className="w-5 h-5 text-black ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
           </button>
         )}
-        <button onClick={handleDelete} className="text-neutral-400 hover:text-red-400 transition-colors text-sm">
-          Delete
-        </button>
+        {confirmDelete ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-300">Delete this playlist?</span>
+            <button onClick={handleDelete} className="bg-red-500 hover:bg-red-400 text-white text-sm font-medium py-1.5 px-3 rounded-full">Yes, delete</button>
+            <button onClick={() => setConfirmDelete(false)} className="bg-neutral-700 hover:bg-neutral-600 text-white text-sm font-medium py-1.5 px-3 rounded-full">Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmDelete(true)} className="text-neutral-400 hover:text-red-400 transition-colors text-sm">
+            Delete
+          </button>
+        )}
       </div>
 
       {/* Tracks */}
