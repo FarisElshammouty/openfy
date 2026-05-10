@@ -14,11 +14,22 @@ function parseLRC(lrc) {
 }
 
 export default function NowPlaying() {
-  const { currentTrack, progress, duration, isPlaying, dominantColor, togglePlay, playNext, playPrev, toggleNowPlaying, seek, isLiked, toggleLike, queue, queueIndex, playTrack, getLyricsCached } = usePlayer();
+  const { currentTrack, progress, duration, isPlaying, dominantColor, togglePlay, playNext, playPrev, toggleNowPlaying, seek, isLiked, toggleLike, queue, queueIndex, playTrack, insertNext, addToQueue, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
+  const [upNextMenu, setUpNextMenu] = useState(null); // { x, y, track }
+  const upNextMenuRef = useRef(null);
   const navigate = useNavigate();
   const activeRef = useRef(null);
+
+  useEffect(() => {
+    if (!upNextMenu) return;
+    const close = (e) => { if (upNextMenuRef.current && !upNextMenuRef.current.contains(e.target)) setUpNextMenu(null); };
+    const esc = (e) => { if (e.key === 'Escape') setUpNextMenu(null); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [upNextMenu]);
 
   useEffect(() => {
     if (!currentTrack) { setSynced([]); setPlain(''); return; }
@@ -151,6 +162,7 @@ export default function NowPlaying() {
                 {upNext.map(t => (
                   <button key={t.videoId}
                     onClick={() => playTrack(t, queue)}
+                    onContextMenu={(e) => { e.preventDefault(); setUpNextMenu({ x: e.clientX, y: e.clientY, track: t }); }}
                     className="w-full flex items-center gap-3 hover:bg-white/10 p-1 rounded transition-colors text-left">
                     <img src={t.thumbnail} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded object-cover bg-neutral-800" />
                     <div className="min-w-0 flex-1">
@@ -164,6 +176,38 @@ export default function NowPlaying() {
           )}
         </div>
       </div>
+
+      {upNextMenu && (
+        <div ref={upNextMenuRef}
+          style={{ position: 'fixed', left: Math.min(upNextMenu.x, window.innerWidth - 220), top: Math.min(upNextMenu.y, window.innerHeight - 220) }}
+          className="bg-neutral-800 rounded-lg shadow-2xl py-1 z-50 w-52 border border-neutral-700"
+        >
+          <button onClick={() => { playTrack(upNextMenu.track, queue); setUpNextMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            Play now
+          </button>
+          <button onClick={() => { insertNext(upNextMenu.track); setUpNextMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+            Play Next
+          </button>
+          <button onClick={() => { toggleLike(upNextMenu.track); setUpNextMenu(null); }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill={isLiked(upNextMenu.track.videoId) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+            </svg>
+            {isLiked(upNextMenu.track.videoId) ? 'Remove from Liked' : 'Save to Liked'}
+          </button>
+          {upNextMenu.track.artistId && (
+            <button onClick={() => { navigate(`/artist/${upNextMenu.track.artistId}`); toggleNowPlaying(); setUpNextMenu(null); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
+              <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+              Go to Artist
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

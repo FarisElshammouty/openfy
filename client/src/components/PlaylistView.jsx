@@ -15,6 +15,8 @@ export default function PlaylistView() {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const dragSrcRef = useRef(null);
   const debounceRef = useRef(null);
 
   useEffect(() => { load(); }, [id]);
@@ -56,6 +58,22 @@ export default function PlaylistView() {
       setPlaylist(p => ({ ...p, tracks: [...p.tracks, track] }));
       refreshPlaylists();
     } catch {}
+  };
+
+  const handleDragStart = (idx) => () => { dragSrcRef.current = idx; };
+  const handleDragOver = (idx) => (e) => { e.preventDefault(); if (dragSrcRef.current !== null) setDragOverIdx(idx); };
+  const handleDragEnd = () => { dragSrcRef.current = null; setDragOverIdx(null); };
+  const handleDrop = (targetIdx) => async (e) => {
+    e.preventDefault();
+    const src = dragSrcRef.current;
+    dragSrcRef.current = null;
+    setDragOverIdx(null);
+    if (src === null || src === targetIdx) return;
+    const newTracks = [...playlist.tracks];
+    const [item] = newTracks.splice(src, 1);
+    newTracks.splice(targetIdx, 0, item);
+    setPlaylist(p => ({ ...p, tracks: newTracks }));
+    try { await api.reorderPlaylist(id, newTracks.map(t => t.videoId)); } catch {}
   };
 
   useEffect(() => {
@@ -137,7 +155,17 @@ export default function PlaylistView() {
         {playlist.tracks.length > 0 && (
           <div className="space-y-0.5 mb-8">
             {playlist.tracks.map((t, i) => (
-              <TrackRow key={t.videoId} track={t} index={i} tracks={playlist.tracks} onRemove={handleRemove} />
+              <div
+                key={t.videoId}
+                draggable
+                onDragStart={handleDragStart(i)}
+                onDragOver={handleDragOver(i)}
+                onDragEnd={handleDragEnd}
+                onDrop={handleDrop(i)}
+                className={`relative ${dragOverIdx === i ? 'ring-1 ring-green-500/50 rounded-md' : ''}`}
+              >
+                <TrackRow track={t} index={i} tracks={playlist.tracks} onRemove={handleRemove} />
+              </div>
             ))}
           </div>
         )}

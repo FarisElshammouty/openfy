@@ -449,8 +449,19 @@ app.delete('/api/history', (_req, res) => {
 
 app.get('/api/history', (_req, res) => {
   res.json(db.prepare(`
-    SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, play_count AS playCount, last_played AS lastPlayed
-    FROM play_history ORDER BY last_played DESC LIMIT 30
+    SELECT
+      h.video_id AS videoId,
+      h.title,
+      h.artist,
+      h.artist_id AS artistId,
+      h.thumbnail,
+      m.thumbnail AS artistThumbnail,
+      h.duration,
+      h.play_count AS playCount,
+      h.last_played AS lastPlayed
+    FROM play_history h
+    LEFT JOIN artist_meta m ON m.artist_id = h.artist_id
+    ORDER BY h.last_played DESC LIMIT 30
   `).all());
 });
 
@@ -837,6 +848,18 @@ app.post('/api/playlists/:id/tracks', (req, res) => {
 
 app.delete('/api/playlists/:id/tracks/:videoId', (req, res) => {
   db.prepare('DELETE FROM playlist_tracks WHERE playlist_id=? AND video_id=?').run(req.params.id, req.params.videoId);
+  db.prepare("UPDATE playlists SET updated_at=datetime('now') WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.put('/api/playlists/:id/reorder', (req, res) => {
+  const { videoIds } = req.body;
+  if (!Array.isArray(videoIds)) return res.status(400).json({ error: 'videoIds array required' });
+  const update = db.prepare('UPDATE playlist_tracks SET position=? WHERE playlist_id=? AND video_id=?');
+  const tx = db.transaction((ids) => {
+    ids.forEach((vid, i) => update.run(i, req.params.id, vid));
+  });
+  tx(videoIds);
   db.prepare("UPDATE playlists SET updated_at=datetime('now') WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });

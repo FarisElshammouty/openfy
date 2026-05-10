@@ -30,6 +30,8 @@ export const api = {
     request(`/playlists/${pid}/tracks`, { method: 'POST', body: JSON.stringify(track) }),
   removeFromPlaylist: (pid, videoId) =>
     request(`/playlists/${pid}/tracks/${videoId}`, { method: 'DELETE' }),
+  reorderPlaylist: (pid, videoIds) =>
+    request(`/playlists/${pid}/reorder`, { method: 'PUT', body: JSON.stringify({ videoIds }) }),
 
   getLiked: () => request('/liked'),
   likeSong: (track) => request('/liked', { method: 'POST', body: JSON.stringify(track) }),
