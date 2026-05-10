@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { usePlayer } from '../context/PlayerContext';
 import TrackRow from './TrackRow';
+import SmartPlaylistBuilder from './SmartPlaylistBuilder';
 
 export default function Library() {
   const [likedTracks, setLikedTracks] = useState([]);
   const [savedAlbums, setSavedAlbums] = useState([]);
+  const [smartPlaylists, setSmartPlaylists] = useState([]);
+  const [showSmartBuilder, setShowSmartBuilder] = useState(false);
   const [loading, setLoading] = useState(true);
   const { playlists, refreshPlaylists, playTrack } = usePlayer();
   const navigate = useNavigate();
@@ -14,7 +17,8 @@ export default function Library() {
   useEffect(() => {
     Promise.all([
       api.getLiked().then(setLikedTracks).catch(() => {}),
-      api.getSavedAlbums().then(setSavedAlbums).catch(() => {})
+      api.getSavedAlbums().then(setSavedAlbums).catch(() => {}),
+      api.getSmartPlaylists().then(setSmartPlaylists).catch(() => {})
     ]).finally(() => setLoading(false));
   }, []);
 
@@ -75,6 +79,44 @@ export default function Library() {
           <div className="space-y-0.5">
             {likedTracks.map((t, i) => (
               <TrackRow key={t.videoId} track={t} index={i} tracks={likedTracks} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Smart Playlists */}
+      <section className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Smart Playlists</h2>
+          <button onClick={() => setShowSmartBuilder(s => !s)}
+            className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium py-2 px-5 rounded-full transition-colors">
+            {showSmartBuilder ? 'Cancel' : 'New smart playlist'}
+          </button>
+        </div>
+        {showSmartBuilder && (
+          <SmartPlaylistBuilder
+            onCreated={async (id) => {
+              setShowSmartBuilder(false);
+              const updated = await api.getSmartPlaylists();
+              setSmartPlaylists(updated);
+              navigate(`/smart-playlist/${id}`);
+            }}
+            onCancel={() => setShowSmartBuilder(false)}
+          />
+        )}
+        {smartPlaylists.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
+            {smartPlaylists.map(sp => (
+              <button key={sp.id} onClick={() => navigate(`/smart-playlist/${sp.id}`)}
+                className="bg-neutral-800/50 hover:bg-neutral-800 rounded-lg p-4 text-left transition-colors group">
+                <div className="w-full aspect-square rounded-md bg-gradient-to-br from-purple-700 to-purple-900 mb-3 flex items-center justify-center shadow-lg">
+                  <svg className="w-12 h-12 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25z" />
+                  </svg>
+                </div>
+                <div className="font-medium text-sm truncate">{sp.name}</div>
+                <div className="text-xs text-neutral-400 truncate">Smart playlist</div>
+              </button>
             ))}
           </div>
         )}

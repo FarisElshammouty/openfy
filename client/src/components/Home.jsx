@@ -21,7 +21,7 @@ export default function Home() {
   const [mixes, setMixes] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const { playTrack, currentTrack } = usePlayer();
+  const { playTrack, currentTrack, homeLayout } = usePlayer();
 
   useEffect(() => {
     api.trending().then(setTrending).catch(() => {}).finally(() => setLoading(false));
@@ -39,55 +39,51 @@ export default function Home() {
     return 'Good evening';
   };
 
-  return (
-    <div className="p-6 pt-16">
-      <h1 className="text-3xl font-bold mb-6">{greeting()}</h1>
-
-      {recent.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-bold mb-4">Recently played</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-            {recent.slice(0, 12).map(t => (
-              <button key={t.videoId}
-                onClick={() => playTrack(t, recent)}
-                className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md flex items-center gap-3 pr-3 overflow-hidden transition-colors group text-left">
-                <img src={t.thumbnail} alt="" referrerPolicy="no-referrer" className="w-14 h-14 object-cover bg-neutral-800 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-sm truncate">{t.title}</div>
-                  <div className="text-xs text-neutral-400 truncate">{t.artist}</div>
-                </div>
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity w-9 h-9 rounded-full bg-green-500 flex items-center justify-center text-black shrink-0">
-                  <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+  const sections = {
+    recent: recent.length > 0 && (
+      <section key="recent" className="mb-8">
+        <h2 className="text-xl font-bold mb-4">Recently played</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {recent.slice(0, 12).map(t => (
+            <button key={t.videoId}
+              onClick={() => playTrack(t, recent)}
+              className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md flex items-center gap-3 pr-3 overflow-hidden transition-colors group text-left">
+              <img src={t.artistThumbnail || t.thumbnail} alt="" referrerPolicy="no-referrer" className="w-14 h-14 object-cover bg-neutral-800 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-sm truncate">{t.title}</div>
+                <div className="text-xs text-neutral-400 truncate">{t.artist}</div>
+              </div>
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity w-9 h-9 rounded-full bg-green-500 flex items-center justify-center text-black shrink-0">
+                <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    ),
+    mixes: mixes.length > 0 && (
+      <section key="mixes" className="mb-8">
+        <h2 className="text-xl font-bold mb-4">Made for you</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {mixes.map(m => (
+            <button key={m.id} onClick={() => m.tracks?.length && playTrack(m.tracks[0], m.tracks)}
+              className="bg-neutral-800/50 hover:bg-neutral-800 rounded-md p-3 text-left transition-colors group">
+              <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden relative">
+                {m.thumbnail && <img src={m.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="absolute bottom-2 right-2 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
                 </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {mixes.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-bold mb-4">Made for you</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {mixes.map(m => (
-              <button key={m.id} onClick={() => m.tracks?.length && playTrack(m.tracks[0], m.tracks)}
-                className="bg-neutral-800/50 hover:bg-neutral-800 rounded-md p-3 text-left transition-colors group">
-                <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden relative">
-                  {m.thumbnail && <img src={m.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <span className="absolute bottom-2 right-2 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <svg className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                  </span>
-                </div>
-                <div className="font-semibold text-sm truncate">{m.name}</div>
-                <div className="text-xs text-neutral-400 line-clamp-2">{m.subtitle}</div>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="mb-8">
+              </div>
+              <div className="font-semibold text-sm truncate">{m.name}</div>
+              <div className="text-xs text-neutral-400 line-clamp-2">{m.subtitle}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+    ),
+    genres: (
+      <section key="genres" className="mb-8">
         <h2 className="text-xl font-bold mb-4">Browse by genre</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {GENRES.map(g => (
@@ -98,8 +94,9 @@ export default function Home() {
           ))}
         </div>
       </section>
-
-      <section>
+    ),
+    trending: (
+      <section key="trending" className="mb-8">
         <h2 className="text-xl font-bold mb-4">Trending now</h2>
         {loading ? (
           <div className="text-neutral-500 py-8 text-center">Loading trending music...</div>
@@ -113,6 +110,15 @@ export default function Home() {
           </div>
         )}
       </section>
+    )
+  };
+
+  const visibleOrder = homeLayout.sections.filter(s => !homeLayout.hidden.includes(s));
+
+  return (
+    <div className="p-6 pt-16">
+      <h1 className="text-3xl font-bold mb-6">{greeting()}</h1>
+      {visibleOrder.map(key => sections[key])}
     </div>
   );
 }

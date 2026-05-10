@@ -15,6 +15,8 @@ import NowPlaying from './components/NowPlaying';
 import Karaoke from './components/Karaoke';
 import MiniPlayer from './components/MiniPlayer';
 import Stats from './components/Stats';
+import Settings from './components/Settings';
+import SmartPlaylist from './components/SmartPlaylist';
 
 function NavControls() {
   const navigate = useNavigate();
@@ -37,7 +39,7 @@ function NavControls() {
 }
 
 function MainLayout() {
-  const { dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer } = usePlayer();
+  const { dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer, showSettings } = usePlayer();
 
   if (miniPlayer) return <MiniPlayer />;
 
@@ -60,6 +62,7 @@ function MainLayout() {
             <Route path="/artist/:id" element={<ArtistView />} />
             <Route path="/album/:id" element={<AlbumView />} />
             <Route path="/stats" element={<Stats />} />
+            <Route path="/smart-playlist/:id" element={<SmartPlaylist />} />
             <Route path="/play/:videoId" element={<AutoPlay />} />
           </Routes>
         </main>
@@ -69,6 +72,7 @@ function MainLayout() {
       <Player />
       {showNowPlaying && <NowPlaying />}
       {showKaraoke && <Karaoke />}
+      {showSettings && <Settings />}
     </div>
   );
 }

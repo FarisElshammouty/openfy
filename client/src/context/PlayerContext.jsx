@@ -54,6 +54,17 @@ export function PlayerProvider({ children }) {
   const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
   const lastTrack = loadPref('openfy.lastTrack', null);
+  const [theme, setTheme] = useState(loadPref('openfy.theme', 'dark'));
+  const [accent, setAccent] = useState(loadPref('openfy.accent', 'green'));
+  const [density, setDensity] = useState(loadPref('openfy.density', 'cozy'));
+  const [homeLayout, setHomeLayout] = useState(loadPref('openfy.homeLayout', {
+    sections: ['recent', 'mixes', 'genres', 'trending'],
+    hidden: []
+  }));
+  const [crossfadeDuration, setCrossfadeDuration] = useState(loadPref('openfy.crossfadeDuration', 3));
+  const [audioOutputDeviceId, setAudioOutputDeviceId] = useState(loadPref('openfy.audioOutput', 'default'));
+  const [lyricsTranslate, setLyricsTranslate] = useState(loadPref('openfy.lyricsTranslate', null)); // null or target lang code
+  const [showSettings, setShowSettings] = useState(false);
   const [queue, setQueue] = useState(lastTrack ? [lastTrack] : []);
   const [queueIndex, setQueueIndex] = useState(lastTrack ? 0 : -1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -90,7 +101,7 @@ export function PlayerProvider({ children }) {
   crossfadeRef.current = crossfade;
 
   const currentTrack = queueIndex >= 0 && queueIndex < queue.length ? queue[queueIndex] : null;
-  const CROSSFADE_MS = 3000;
+  const CROSSFADE_MS = crossfadeDuration * 1000;
 
   useEffect(() => {
     api.getLiked().then(t => setLikedIds(new Set(t.map(x => x.videoId)))).catch(() => {});
@@ -305,6 +316,29 @@ export function PlayerProvider({ children }) {
   useEffect(() => { audioRef.current.volume = volume; savePref('openfy.volume', volume); }, [volume]);
   useEffect(() => { savePref('openfy.crossfade', crossfade); }, [crossfade]);
   useEffect(() => { savePref('openfy.lastTrack', currentTrack || null); }, [currentTrack]);
+  useEffect(() => {
+    savePref('openfy.theme', theme);
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  useEffect(() => {
+    savePref('openfy.accent', accent);
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
+  useEffect(() => {
+    savePref('openfy.density', density);
+    document.documentElement.dataset.density = density;
+  }, [density]);
+  useEffect(() => { savePref('openfy.homeLayout', homeLayout); }, [homeLayout]);
+  useEffect(() => { savePref('openfy.crossfadeDuration', crossfadeDuration); }, [crossfadeDuration]);
+  useEffect(() => { savePref('openfy.lyricsTranslate', lyricsTranslate); }, [lyricsTranslate]);
+
+  // Apply audio output device
+  useEffect(() => {
+    savePref('openfy.audioOutput', audioOutputDeviceId);
+    if (audioRef.current.setSinkId && audioOutputDeviceId) {
+      audioRef.current.setSinkId(audioOutputDeviceId).catch(() => {});
+    }
+  }, [audioOutputDeviceId]);
 
   // Media Session handlers + position state
   useEffect(() => {
@@ -488,6 +522,8 @@ export function PlayerProvider({ children }) {
     if (!showKaraoke) { setShowLyrics(false); setShowNowPlaying(false); }
   }, [showKaraoke]);
 
+  const toggleSettings = useCallback(() => setShowSettings(p => !p), []);
+
   const toggleMiniPlayer = useCallback(() => {
     setMiniPlayer(p => {
       const next = !p;
@@ -537,22 +573,67 @@ export function PlayerProvider({ children }) {
   const refreshPlaylists = useCallback(async () => { setPlaylists(await api.getPlaylists()); }, []);
 
   // Shared lyrics cache so Lyrics/NowPlaying/Karaoke don't all re-fetch
-  const getLyricsCached = useCallback((track) => {
-    if (!track) return Promise.resolve({ syncedLyrics: null, plainLyrics: null });
+  const getLyricsCached = useCallback(async (track) => {
+    if (!track) return { syncedLyrics: null, plainLyrics: null };
     const cache = lyricsCacheRef.current;
-    const cached = cache.get(track.videoId);
-    if (cached) return Promise.resolve(cached);
-    return api.getLyrics(track.title, track.artist).then(data => {
-      cache.set(track.videoId, data);
+    const cacheKey = `${track.videoId}:${lyricsTranslate || 'orig'}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+    const baseKey = `${track.videoId}:orig`;
+    let data;
+    if (cache.has(baseKey)) {
+      data = cache.get(baseKey);
+    } else {
+      data = await api.getLyrics(track.title, track.artist);
+      cache.set(baseKey, data);
+    }
+
+    if (!lyricsTranslate || (!data.syncedLyrics && !data.plainLyrics)) {
       return data;
-    });
-  }, []);
+    }
+
+    // Translate the lyric LINES, preserving timestamps for synced
+    try {
+      let translatedSynced = data.syncedLyrics;
+      let translatedPlain = data.plainLyrics;
+
+      if (data.syncedLyrics) {
+        const lines = data.syncedLyrics.split('\n');
+        const textLines = lines.map(l => {
+          const m = l.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]\s*(.*)/);
+          return m ? m[4] : '';
+        });
+        const joined = textLines.join('\n');
+        const { translated } = await api.translate(joined, lyricsTranslate);
+        const translatedLines = translated.split('\n');
+        translatedSynced = lines.map((l, i) => {
+          const m = l.match(/(\[\d{2}:\d{2}\.\d{2,3}\])\s*(.*)/);
+          if (m && translatedLines[i] != null) return `${m[1]} ${translatedLines[i]}`;
+          return l;
+        }).join('\n');
+      } else if (data.plainLyrics) {
+        const { translated } = await api.translate(data.plainLyrics, lyricsTranslate);
+        translatedPlain = translated;
+      }
+
+      const result = { syncedLyrics: translatedSynced, plainLyrics: translatedPlain };
+      cache.set(cacheKey, result);
+      return result;
+    } catch {
+      return data;
+    }
+  }, [lyricsTranslate]);
 
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
       crossfade, dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer,
       playbackRate, sleepTimer,
+      // Settings
+      theme, setTheme, accent, setAccent, density, setDensity,
+      homeLayout, setHomeLayout, crossfadeDuration, setCrossfadeDuration,
+      audioOutputDeviceId, setAudioOutputDeviceId, lyricsTranslate, setLyricsTranslate,
+      showSettings, toggleSettings,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
       toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,

@@ -15,11 +15,22 @@ export default function Karaoke() {
   const { currentTrack, progress, seek, dominantColor, toggleKaraoke, togglePlay, isPlaying, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [micLevel, setMicLevel] = useState(0); // 0-1 instantaneous level
+  const [score, setScore] = useState(null); // 0-100 cumulative
   const activeRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const streamRef = useRef(null);
+  const animRef = useRef(null);
+  // Score tracking: how many lyric lines had detectable singing
+  const scoreStateRef = useRef({ linesScored: new Set(), totalLines: 0, hitLines: 0 });
 
   useEffect(() => {
     if (!currentTrack) return;
     setSynced([]); setPlain('');
+    setScore(null);
+    scoreStateRef.current = { linesScored: new Set(), totalLines: 0, hitLines: 0 };
     getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
@@ -27,9 +38,7 @@ export default function Karaoke() {
   }, [currentTrack?.videoId, getLyricsCached]);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') toggleKaraoke();
-    };
+    const onKey = (e) => { if (e.key === 'Escape') toggleKaraoke(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleKaraoke]);
@@ -39,6 +48,74 @@ export default function Karaoke() {
   useEffect(() => {
     if (activeRef.current) activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [currentLine]);
+
+  // Score: for each lyric line, check if user is making sound during it
+  useEffect(() => {
+    if (!micEnabled || currentLine < 0 || !synced[currentLine]) return;
+    const s = scoreStateRef.current;
+    if (s.linesScored.has(currentLine)) return;
+    // Threshold: average mic level above 0.05 (anything beyond background noise)
+    if (micLevel > 0.05) {
+      s.linesScored.add(currentLine);
+      s.hitLines += 1;
+      s.totalLines = Math.max(s.totalLines, currentLine + 1);
+      setScore(Math.round((s.hitLines / s.totalLines) * 100));
+    }
+  }, [micLevel, currentLine, micEnabled, synced]);
+
+  // Update totalLines as currentLine progresses
+  useEffect(() => {
+    if (!micEnabled || currentLine < 0) return;
+    const s = scoreStateRef.current;
+    s.totalLines = Math.max(s.totalLines, currentLine + 1);
+    if (s.totalLines > 0) setScore(Math.round((s.hitLines / s.totalLines) * 100));
+  }, [currentLine, micEnabled]);
+
+  const enableMic = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      streamRef.current = stream;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const buf = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(buf);
+        // RMS
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+        setMicLevel(rms);
+        animRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+      setMicEnabled(true);
+    } catch (e) {
+      console.error('Mic error:', e);
+    }
+  };
+
+  const disableMic = () => {
+    cancelAnimationFrame(animRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    audioCtxRef.current?.close();
+    streamRef.current = null;
+    audioCtxRef.current = null;
+    analyserRef.current = null;
+    setMicEnabled(false);
+    setMicLevel(0);
+  };
+
+  useEffect(() => () => disableMic(), []); // cleanup on unmount
 
   if (!currentTrack) return null;
 
@@ -59,23 +136,50 @@ export default function Karaoke() {
         <div className="text-white/60 text-xs">{currentTrack.artist}</div>
       </div>
 
+      {/* Mic + score */}
+      <div className="absolute top-6 right-20 flex items-center gap-3">
+        {score !== null && (
+          <div className="text-right">
+            <div className="text-xs text-white/60 uppercase tracking-wider">Score</div>
+            <div className="text-2xl font-black tabular-nums">{score}</div>
+          </div>
+        )}
+        <button onClick={micEnabled ? disableMic : enableMic}
+          title={micEnabled ? 'Turn off mic' : 'Sing along — turn on mic'}
+          className={`p-2 rounded-full transition-colors ${micEnabled ? 'bg-green-500 text-black' : 'bg-white/10 hover:bg-white/20'}`}>
+          {micEnabled
+            ? <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" /></svg>
+            : <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.55-.9l4.2 4.2L21 19.73 4.27 3z" /></svg>}
+        </button>
+      </div>
+
+      {/* Mic level visualizer */}
+      {micEnabled && (
+        <div className="absolute top-20 right-6 w-32 h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <div className="h-full bg-green-500 transition-[width] duration-75" style={{ width: `${Math.min(100, micLevel * 500)}%` }} />
+        </div>
+      )}
+
       <div className="w-full max-w-4xl h-full overflow-hidden flex items-center">
         {synced.length > 0 ? (
           <div className="overflow-y-auto max-h-full w-full px-12 lyrics-scroll" style={{ scrollbarWidth: 'none' }}>
             <div className="space-y-8 py-[40vh]">
-              {synced.map((line, i) => (
-                <p key={i} ref={i === currentLine ? activeRef : null}
-                  onClick={() => seek(line.time)}
-                  className={`text-center cursor-pointer transition-all duration-300 ${
-                    i === currentLine
-                      ? 'text-white text-5xl font-black'
-                      : Math.abs(i - currentLine) === 1
-                      ? 'text-white/60 text-3xl font-bold'
-                      : 'text-white/30 text-2xl font-semibold'
-                  }`}>
-                  {line.text}
-                </p>
-              ))}
+              {synced.map((line, i) => {
+                const sung = micEnabled && scoreStateRef.current.linesScored.has(i);
+                return (
+                  <p key={i} ref={i === currentLine ? activeRef : null}
+                    onClick={() => seek(line.time)}
+                    className={`text-center cursor-pointer transition-all duration-300 ${
+                      i === currentLine
+                        ? 'text-white text-5xl font-black'
+                        : Math.abs(i - currentLine) === 1
+                        ? 'text-white/60 text-3xl font-bold'
+                        : 'text-white/30 text-2xl font-semibold'
+                    } ${sung && i < currentLine ? 'text-green-400' : ''}`}>
+                    {line.text}
+                  </p>
+                );
+              })}
             </div>
           </div>
         ) : plain ? (

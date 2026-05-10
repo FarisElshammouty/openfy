@@ -143,6 +143,40 @@ app.get('/api/lyrics', async (req, res) => {
   }
 });
 
+// ── Lyrics translation (MyMemory) ───────────────────────────────────
+
+const translationCache = new Map();
+
+app.post('/api/translate', async (req, res) => {
+  const { text, target } = req.body;
+  if (!text || !target) return res.status(400).json({ error: 'text and target required' });
+
+  const cacheKey = `${target}:${text}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) return res.json({ translated: cached });
+
+  try {
+    // MyMemory has a 500-char per-request limit, so we split lines into batches
+    const lines = text.split('\n');
+    const translated = await Promise.all(lines.map(async line => {
+      if (!line.trim()) return line;
+      try {
+        const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(line.slice(0, 480))}&langpair=auto|${encodeURIComponent(target)}`, {
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!r.ok) return line;
+        const data = await r.json();
+        return data.responseData?.translatedText || line;
+      } catch { return line; }
+    }));
+    const result = translated.join('\n');
+    translationCache.set(cacheKey, result);
+    res.json({ translated: result });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Search ──────────────────────────────────────────────────────────
 
 app.get('/api/search', async (req, res) => {
@@ -982,6 +1016,95 @@ app.post('/api/saved-albums', (req, res) => {
 app.delete('/api/saved-albums/:id', (req, res) => {
   db.prepare('DELETE FROM saved_albums WHERE album_id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ── Smart playlists ─────────────────────────────────────────────────
+
+app.get('/api/smart-playlists', (_req, res) => {
+  res.json(db.prepare('SELECT id, name, rules_json FROM smart_playlists ORDER BY id').all().map(r => ({
+    id: r.id, name: r.name, rules: JSON.parse(r.rules_json)
+  })));
+});
+
+app.post('/api/smart-playlists', (req, res) => {
+  const { name, rules } = req.body;
+  if (!name || !rules) return res.status(400).json({ error: 'name + rules required' });
+  const result = db.prepare('INSERT INTO smart_playlists (name, rules_json) VALUES (?, ?)')
+    .run(name, JSON.stringify(rules));
+  res.json({ id: Number(result.lastInsertRowid) });
+});
+
+app.delete('/api/smart-playlists/:id', (req, res) => {
+  db.prepare('DELETE FROM smart_playlists WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Resolve a smart playlist into a track list based on its rules
+app.get('/api/smart-playlists/:id/tracks', (req, res) => {
+  const sp = db.prepare('SELECT name, rules_json FROM smart_playlists WHERE id=?').get(req.params.id);
+  if (!sp) return res.status(404).json({ error: 'Not found' });
+  const rules = JSON.parse(sp.rules_json);
+
+  // Sources: liked, history, playlist tracks
+  let source = rules.source || 'liked'; // 'liked' | 'history' | 'all'
+  let rows = [];
+  if (source === 'liked') {
+    rows = db.prepare(`
+      SELECT video_id AS videoId, title, artist, '' AS artistId, thumbnail, duration, added_at AS addedAt, 0 AS playCount
+      FROM liked_tracks
+    `).all();
+  } else if (source === 'history') {
+    rows = db.prepare(`
+      SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, last_played AS addedAt, play_count AS playCount
+      FROM play_history
+    `).all();
+  } else if (source === 'all') {
+    const liked = db.prepare(`SELECT video_id AS videoId, title, artist, '' AS artistId, thumbnail, duration, added_at AS addedAt, 0 AS playCount FROM liked_tracks`).all();
+    const hist = db.prepare(`SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, last_played AS addedAt, play_count AS playCount FROM play_history`).all();
+    const seen = new Set(liked.map(r => r.videoId));
+    rows = [...liked, ...hist.filter(r => !seen.has(r.videoId))];
+  }
+
+  // Apply rules. Each rule: { field, op, value }
+  // field: 'artist' | 'title' | 'duration' | 'playCount' | 'addedAt'
+  // op: 'contains' | 'equals' | 'gt' | 'lt' | 'gte' | 'lte' | 'in_last_days'
+  const match = (row, rule) => {
+    const v = row[rule.field];
+    if (rule.op === 'contains') return String(v || '').toLowerCase().includes(String(rule.value).toLowerCase());
+    if (rule.op === 'equals') return String(v || '').toLowerCase() === String(rule.value).toLowerCase();
+    if (rule.op === 'gt') return Number(v) > Number(rule.value);
+    if (rule.op === 'gte') return Number(v) >= Number(rule.value);
+    if (rule.op === 'lt') return Number(v) < Number(rule.value);
+    if (rule.op === 'lte') return Number(v) <= Number(rule.value);
+    if (rule.op === 'in_last_days') {
+      if (!v) return false;
+      const ms = (Date.now() - new Date(v + 'Z').getTime()) / 86400000;
+      return ms <= Number(rule.value);
+    }
+    return false;
+  };
+
+  const combine = rules.combine || 'and'; // 'and' | 'or'
+  const filterRules = rules.rules || [];
+  const filtered = rows.filter(r => {
+    if (!filterRules.length) return true;
+    if (combine === 'or') return filterRules.some(rule => match(r, rule));
+    return filterRules.every(rule => match(r, rule));
+  });
+
+  // Sort
+  const sortBy = rules.sort || 'addedAt';
+  const sortDir = rules.sortDir || 'desc';
+  filtered.sort((a, b) => {
+    const av = a[sortBy]; const bv = b[sortBy];
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'number') return sortDir === 'desc' ? bv - av : av - bv;
+    return sortDir === 'desc' ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+  });
+
+  const limit = rules.limit && rules.limit > 0 ? Math.min(rules.limit, 500) : 100;
+  res.json({ name: sp.name, tracks: filtered.slice(0, limit) });
 });
 
 // ── Discord RPC ────────────────────────────────────────────────────

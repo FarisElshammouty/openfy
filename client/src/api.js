@@ -42,6 +42,11 @@ export const api = {
   getSavedAlbums: () => request('/saved-albums'),
   saveAlbum: (album) => request('/saved-albums', { method: 'POST', body: JSON.stringify(album) }),
   unsaveAlbum: (id) => request(`/saved-albums/${id}`, { method: 'DELETE' }),
+
+  getSmartPlaylists: () => request('/smart-playlists'),
+  createSmartPlaylist: (name, rules) => request('/smart-playlists', { method: 'POST', body: JSON.stringify({ name, rules }) }),
+  deleteSmartPlaylist: (id) => request(`/smart-playlists/${id}`, { method: 'DELETE' }),
+  getSmartPlaylistTracks: (id) => request(`/smart-playlists/${id}/tracks`),
   getHistory: () => request('/history'),
   getStats: () => request('/stats'),
   getMixes: () => request('/mixes'),
@@ -71,5 +76,6 @@ export const api = {
     }).catch(() => {}),
 
   getLyrics: (title, artist) =>
-    request(`/lyrics?title=${encodeURIComponent(title || '')}&artist=${encodeURIComponent(artist || '')}`)
+    request(`/lyrics?title=${encodeURIComponent(title || '')}&artist=${encodeURIComponent(artist || '')}`),
+  translate: (text, target) => request('/translate', { method: 'POST', body: JSON.stringify({ text, target }) })
 };
