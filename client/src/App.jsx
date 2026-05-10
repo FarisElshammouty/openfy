@@ -12,6 +12,9 @@ import AutoPlay from './components/AutoPlay';
 import QueuePanel from './components/QueuePanel';
 import Lyrics from './components/Lyrics';
 import NowPlaying from './components/NowPlaying';
+import Karaoke from './components/Karaoke';
+import MiniPlayer from './components/MiniPlayer';
+import Stats from './components/Stats';
 
 function NavControls() {
   const navigate = useNavigate();
@@ -34,7 +37,9 @@ function NavControls() {
 }
 
 function MainLayout() {
-  const { dominantColor, showQueue, showLyrics, showNowPlaying } = usePlayer();
+  const { dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer } = usePlayer();
+
+  if (miniPlayer) return <MiniPlayer />;
 
   const gradientStyle = dominantColor ? {
     background: `linear-gradient(to bottom, rgba(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b}, 0.35) 0%, rgb(23, 23, 23) 350px)`
@@ -54,6 +59,7 @@ function MainLayout() {
             <Route path="/playlist/:id" element={<PlaylistView />} />
             <Route path="/artist/:id" element={<ArtistView />} />
             <Route path="/album/:id" element={<AlbumView />} />
+            <Route path="/stats" element={<Stats />} />
             <Route path="/play/:videoId" element={<AutoPlay />} />
           </Routes>
         </main>
@@ -62,6 +68,7 @@ function MainLayout() {
       </div>
       <Player />
       {showNowPlaying && <NowPlaying />}
+      {showKaraoke && <Karaoke />}
     </div>
   );
 }

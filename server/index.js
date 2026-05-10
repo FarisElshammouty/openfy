@@ -156,13 +156,81 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+app.get('/api/search/artists', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.json({ items: [] });
+    const yt = await getYtClient();
+    const r = await yt.music.search(q, { type: 'artist' });
+    const items = r.contents?.[0]?.contents || [];
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const thumbUrl = (t) => { const a = thumbArr(t); return a[a.length - 1]?.url || a[0]?.url || ''; };
+    res.json({
+      items: items.map(item => ({
+        id: item.id,
+        name: text(item.title),
+        thumbnail: thumbUrl(item.thumbnail),
+        subscribers: text(item.subscribers)
+      })).filter(a => a.id)
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.get('/api/search/albums', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.json({ items: [] });
+    const yt = await getYtClient();
+    const r = await yt.music.search(q, { type: 'album' });
+    const items = r.contents?.[0]?.contents || [];
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const thumbUrl = (t) => { const a = thumbArr(t); return a[a.length - 1]?.url || a[0]?.url || ''; };
+    res.json({
+      items: items.map(item => ({
+        id: item.id,
+        title: text(item.title),
+        artist: text(item.author?.name) || (item.authors?.[0]?.name || ''),
+        year: item.year || '',
+        thumbnail: thumbUrl(item.thumbnail)
+      })).filter(a => a.id && a.title)
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Trending ────────────────────────────────────────────────────────
 
-app.get('/api/trending', async (req, res) => {
+let trendingCache = null;
+
+app.get('/api/trending', async (_req, res) => {
+  if (trendingCache && Date.now() - trendingCache.ts < 1800000) {
+    return res.json(trendingCache.data);
+  }
   try {
-    const { region = 'US' } = req.query;
-    const data = await piped(`/trending?region=${region}`);
-    res.json((data || []).filter(i => i.duration > 30 && i.duration < 600).map(mapTrack).filter(t => t.videoId));
+    const yt = await getYtClient();
+    const explore = await yt.music.getExplore();
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const sectionTitle = (s) => text(s.title) || text(s.header?.title) || '';
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const thumbUrl = (t) => { const a = thumbArr(t); return a[a.length - 1]?.url || a[0]?.url || ''; };
+
+    const section = explore.sections?.find(s => sectionTitle(s) === 'Trending');
+    const items = (section?.contents || []).map(item => ({
+      videoId: item.id,
+      title: text(item.title),
+      artist: (item.artists || []).map(a => a.name).join(', '),
+      artistId: item.artists?.[0]?.channel_id || '',
+      thumbnail: thumbUrl(item.thumbnail),
+      duration: item.duration?.seconds || 0
+    })).filter(t => t.videoId);
+
+    trendingCache = { data: items, ts: Date.now() };
+    res.json(items);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -263,7 +331,15 @@ app.get('/api/album/:id', async (req, res) => {
     const bigThumb = (t) => thumbArr(t)[0]?.url || '';
 
     const albumThumb = bigThumb(album.header?.thumbnail);
-    const albumArtists = (album.header?.artists || []).map(a => ({ name: a.name, id: a.channel_id }));
+
+    const albumArtists = [];
+    const strapline = album.header?.strapline_text_one;
+    if (strapline?.text) {
+      albumArtists.push({
+        name: strapline.text,
+        id: strapline.endpoint?.payload?.browseId || ''
+      });
+    }
 
     const tracks = (album.contents || []).map(item => ({
       videoId: item.id,
@@ -274,11 +350,15 @@ app.get('/api/album/:id', async (req, res) => {
       duration: item.duration?.seconds || 0
     })).filter(t => t.videoId);
 
+    const subtitleText = text(album.header?.subtitle);
+    const yearMatch = subtitleText.match(/\d{4}/);
+
     const data = {
       id,
       title: text(album.header?.title),
-      subtitle: text(album.header?.subtitle),
-      year: album.header?.year || '',
+      subtitle: subtitleText,
+      year: yearMatch ? yearMatch[0] : '',
+      stats: text(album.header?.second_subtitle),
       thumbnail: albumThumb,
       artists: albumArtists,
       tracks
@@ -316,6 +396,123 @@ app.get('/api/history', (_req, res) => {
     SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, play_count AS playCount, last_played AS lastPlayed
     FROM play_history ORDER BY last_played DESC LIMIT 30
   `).all());
+});
+
+// "Made for You" mixes — based on top artists from history
+let mixesCache = null;
+
+app.get('/api/mixes', async (_req, res) => {
+  if (mixesCache && Date.now() - mixesCache.ts < 3600000) {
+    return res.json(mixesCache.data);
+  }
+  try {
+    const topArtists = db.prepare(`
+      SELECT artist, artist_id AS artistId, MAX(thumbnail) AS thumbnail, SUM(play_count) AS plays
+      FROM play_history WHERE artist_id != ''
+      GROUP BY artist_id ORDER BY plays DESC LIMIT 5
+    `).all();
+
+    if (!topArtists.length) {
+      return res.json({ mixes: [] });
+    }
+
+    const yt = await getYtClient();
+    const text = (v) => typeof v === 'string' ? v : (v?.text || '');
+    const thumbArr = (t) => Array.isArray(t) ? t : (t?.contents || []);
+    const thumbUrl = (t) => { const a = thumbArr(t); return a[a.length - 1]?.url || a[0]?.url || ''; };
+    const sectionTitle = (s) => text(s.title) || text(s.header?.title) || '';
+
+    const mixes = [];
+    for (const seed of topArtists.slice(0, 3)) {
+      try {
+        const ch = await yt.music.getArtist(seed.artistId);
+        const top = ch.sections?.find(s => sectionTitle(s) === 'Top songs');
+        const related = ch.sections?.find(s => sectionTitle(s) === 'Fans might also like');
+
+        // Pull seed's top 3 songs + 1-2 from each of 3 related artists
+        const tracks = [];
+        for (const item of (top?.contents || []).slice(0, 3)) {
+          if (item.id) tracks.push({
+            videoId: item.id,
+            title: text(item.title),
+            artist: (item.artists || []).map(a => a.name).join(', ') || seed.artist,
+            artistId: seed.artistId,
+            thumbnail: thumbUrl(item.thumbnail),
+            duration: 0
+          });
+        }
+
+        const relatedArtists = (related?.contents || []).slice(0, 4);
+        for (const ra of relatedArtists) {
+          if (!ra.id) continue;
+          try {
+            const rch = await yt.music.getArtist(ra.id);
+            const rtop = rch.sections?.find(s => sectionTitle(s) === 'Top songs');
+            for (const item of (rtop?.contents || []).slice(0, 2)) {
+              if (item.id) tracks.push({
+                videoId: item.id,
+                title: text(item.title),
+                artist: (item.artists || []).map(a => a.name).join(', ') || text(ra.title),
+                artistId: ra.id,
+                thumbnail: thumbUrl(item.thumbnail),
+                duration: 0
+              });
+            }
+          } catch {}
+        }
+
+        // Shuffle the tracks for variety
+        for (let i = tracks.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+        }
+
+        mixes.push({
+          id: `mix-${seed.artistId}`,
+          name: `${seed.artist} Mix`,
+          subtitle: `Inspired by ${seed.artist} and similar artists`,
+          thumbnail: seed.thumbnail,
+          tracks: tracks.slice(0, 20)
+        });
+      } catch {}
+    }
+
+    const data = { mixes };
+    mixesCache = { data, ts: Date.now() };
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.get('/api/stats', (_req, res) => {
+  const topTracks = db.prepare(`
+    SELECT video_id AS videoId, title, artist, artist_id AS artistId, thumbnail, duration, play_count AS playCount
+    FROM play_history ORDER BY play_count DESC, last_played DESC LIMIT 10
+  `).all();
+
+  const topArtists = db.prepare(`
+    SELECT artist, artist_id AS artistId, MAX(thumbnail) AS thumbnail,
+           SUM(play_count) AS plays, COUNT(*) AS uniqueTracks
+    FROM play_history WHERE artist != ''
+    GROUP BY artist ORDER BY plays DESC LIMIT 10
+  `).all();
+
+  const totals = db.prepare(`
+    SELECT
+      SUM(play_count) AS totalPlays,
+      COUNT(*) AS uniqueTracks,
+      SUM(duration * play_count) AS totalSeconds
+    FROM play_history
+  `).get();
+
+  res.json({
+    topTracks,
+    topArtists,
+    totalPlays: totals.totalPlays || 0,
+    uniqueTracks: totals.uniqueTracks || 0,
+    totalSeconds: totals.totalSeconds || 0
+  });
 });
 
 // ── Audio stream proxy ──────────────────────────────────────────────
@@ -525,6 +722,108 @@ app.post('/api/liked', (req, res) => {
 
 app.delete('/api/liked/:videoId', (req, res) => {
   db.prepare('DELETE FROM liked_tracks WHERE video_id=?').run(req.params.videoId);
+  res.json({ success: true });
+});
+
+// ── Playlist import (Spotify / YouTube) ────────────────────────────
+
+async function importSpotify(playlistId) {
+  const url = `https://open.spotify.com/embed/playlist/${playlistId}`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!r.ok) throw new Error('Spotify embed fetch failed');
+  const html = await r.text();
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) throw new Error('Could not parse Spotify playlist');
+  const data = JSON.parse(m[1]);
+  const entity = data.props?.pageProps?.state?.data?.entity;
+  if (!entity) throw new Error('No playlist data');
+  const tracks = entity.trackList || entity.tracks || [];
+  return {
+    name: entity.title || entity.name || 'Imported Playlist',
+    tracks: tracks.map(t => ({
+      title: t.title || t.name || '',
+      artist: t.subtitle || (t.artists || []).map(a => a.name).join(', ')
+    })).filter(t => t.title)
+  };
+}
+
+async function searchYoutubeForTrack(query) {
+  try {
+    const data = await piped(`/search?q=${encodeURIComponent(query)}&filter=music_songs`);
+    const item = data.items?.[0];
+    if (!item) return null;
+    return mapTrack(item);
+  } catch {
+    return null;
+  }
+}
+
+app.post('/api/import-playlist', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    let source;
+    const sm = url.match(/spotify\.com\/(?:embed\/)?playlist\/([a-zA-Z0-9]+)/);
+    if (sm) {
+      source = await importSpotify(sm[1]);
+    } else {
+      return res.status(400).json({ error: 'Only Spotify playlist URLs supported for now' });
+    }
+
+    if (!source.tracks.length) return res.status(400).json({ error: 'No tracks found' });
+
+    const result = db.prepare('INSERT INTO playlists (name, description) VALUES (?, ?)')
+      .run(source.name, 'Imported from Spotify');
+    const playlistId = Number(result.lastInsertRowid);
+
+    let added = 0;
+    let position = 0;
+    for (const t of source.tracks) {
+      const query = `${t.title} ${t.artist}`.trim();
+      const found = await searchYoutubeForTrack(query);
+      if (!found) continue;
+      try {
+        db.prepare('INSERT INTO playlist_tracks (playlist_id,video_id,title,artist,thumbnail,duration,position) VALUES(?,?,?,?,?,?,?)')
+          .run(playlistId, found.videoId, found.title, found.artist, found.thumbnail || '', found.duration || 0, position++);
+        added++;
+      } catch {}
+    }
+
+    res.json({
+      playlistId,
+      name: source.name,
+      total: source.tracks.length,
+      added
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Saved albums ────────────────────────────────────────────────────
+
+app.get('/api/saved-albums', (_req, res) => {
+  res.json(db.prepare(`
+    SELECT album_id AS id, title, artist, artist_id AS artistId, thumbnail, year, saved_at AS savedAt
+    FROM saved_albums ORDER BY saved_at DESC
+  `).all());
+});
+
+app.post('/api/saved-albums', (req, res) => {
+  const { id, title, artist, artistId, thumbnail, year } = req.body;
+  if (!id || !title) return res.status(400).json({ error: 'id and title required' });
+  db.prepare(`
+    INSERT OR REPLACE INTO saved_albums (album_id, title, artist, artist_id, thumbnail, year)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, title, artist || '', artistId || '', thumbnail || '', year || '');
+  res.json({ success: true });
+});
+
+app.delete('/api/saved-albums/:id', (req, res) => {
+  db.prepare('DELETE FROM saved_albums WHERE album_id=?').run(req.params.id);
   res.json({ success: true });
 });
 

@@ -6,13 +6,22 @@ import TrackRow from './TrackRow';
 
 export default function Library() {
   const [likedTracks, setLikedTracks] = useState([]);
+  const [savedAlbums, setSavedAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
   const { playlists, refreshPlaylists, playTrack } = usePlayer();
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.getLiked().then(setLikedTracks).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([
+      api.getLiked().then(setLikedTracks).catch(() => {}),
+      api.getSavedAlbums().then(setSavedAlbums).catch(() => {})
+    ]).finally(() => setLoading(false));
   }, []);
+
+  const [showImport, setShowImport] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const createPlaylist = async () => {
     const p = await api.createPlaylist(`My Playlist #${playlists.length + 1}`);
@@ -22,6 +31,20 @@ export default function Library() {
 
   const playAllLiked = () => {
     if (likedTracks.length) playTrack(likedTracks[0], likedTracks);
+  };
+
+  const handleImport = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const r = await api.importPlaylist(importUrl.trim());
+      setImportResult({ ok: true, ...r });
+      await refreshPlaylists();
+    } catch (e) {
+      setImportResult({ ok: false, error: e.message });
+    }
+    setImporting(false);
   };
 
   return (
@@ -57,15 +80,65 @@ export default function Library() {
         )}
       </section>
 
+      {/* Saved Albums */}
+      {savedAlbums.length > 0 && (
+        <section className="mb-10">
+          <h2 className="text-2xl font-bold mb-4">Saved Albums</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {savedAlbums.map(a => (
+              <button key={a.id} onClick={() => navigate(`/album/${a.id}`)}
+                className="bg-neutral-800/50 hover:bg-neutral-800 rounded-lg p-4 text-left transition-colors group">
+                <div className="w-full aspect-square rounded-md bg-neutral-800 mb-3 overflow-hidden shadow-lg">
+                  {a.thumbnail && <img src={a.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+                </div>
+                <div className="font-medium text-sm truncate">{a.title}</div>
+                <div className="text-xs text-neutral-400 truncate">{a.artist || 'Album'}{a.year ? ` · ${a.year}` : ''}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Playlists */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold">Your Playlists</h2>
-          <button onClick={createPlaylist}
-            className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium py-2 px-5 rounded-full transition-colors">
-            Create Playlist
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowImport(s => !s)}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium py-2 px-5 rounded-full transition-colors">
+              Import
+            </button>
+            <button onClick={createPlaylist}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium py-2 px-5 rounded-full transition-colors">
+              Create
+            </button>
+          </div>
         </div>
+
+        {showImport && (
+          <div className="bg-neutral-800/40 rounded-lg p-4 mb-4 max-w-2xl">
+            <div className="text-sm font-semibold mb-2">Import from Spotify</div>
+            <p className="text-xs text-neutral-400 mb-3">Paste a Spotify playlist URL. Tracks will be searched on YouTube and added to a new local playlist.</p>
+            <div className="flex gap-2">
+              <input type="text" value={importUrl} onChange={e => setImportUrl(e.target.value)}
+                placeholder="https://open.spotify.com/playlist/..."
+                className="flex-1 bg-neutral-900 text-white text-sm px-3 py-2 rounded outline-none focus:ring-2 focus:ring-white/20" />
+              <button onClick={handleImport} disabled={importing || !importUrl.trim()}
+                className="bg-green-500 text-black px-4 py-2 rounded text-sm font-semibold hover:bg-green-400 disabled:opacity-50">
+                {importing ? 'Importing...' : 'Import'}
+              </button>
+            </div>
+            {importResult && (
+              <div className={`mt-3 text-sm ${importResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                {importResult.ok
+                  ? <button onClick={() => navigate(`/playlist/${importResult.playlistId}`)} className="hover:underline">
+                      Imported "{importResult.name}" — {importResult.added}/{importResult.total} tracks added
+                    </button>
+                  : `Error: ${importResult.error}`}
+              </div>
+            )}
+          </div>
+        )}
 
         {playlists.length === 0 ? (
           <div className="text-center py-12">

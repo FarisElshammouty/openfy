@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 
@@ -9,12 +10,22 @@ function fmt(s) {
 export default function Player() {
   const {
     currentTrack, isPlaying, volume, progress, duration, shuffle, repeat,
-    crossfade, showQueue, showLyrics,
+    crossfade, showQueue, showLyrics, playbackRate, sleepTimer,
     togglePlay, playNext, playPrev, seek, setVolume, toggleShuffle, toggleRepeat,
     toggleCrossfade, toggleQueue, toggleLyrics,
-    isLiked, toggleLike, toggleNowPlaying
+    isLiked, toggleLike, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
+    setPlaybackRate, startSleepTimer
   } = usePlayer();
   const navigate = useNavigate();
+  const [extrasOpen, setExtrasOpen] = useState(false);
+  const extrasRef = useRef(null);
+
+  useEffect(() => {
+    if (!extrasOpen) return;
+    const close = (e) => { if (extrasRef.current && !extrasRef.current.contains(e.target)) setExtrasOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [extrasOpen]);
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
@@ -99,6 +110,82 @@ export default function Player() {
             <path d="M16 9V7c0-2.76-2.24-5-5-5S6 4.24 6 7v2c-1.1 0-2 .9-2 2v1h2.17C6.06 12.34 6 12.67 6 13c0 3.31 2.69 6 6 6s6-2.69 6-6c0-.33-.06-.66-.17-1H20v-1c0-1.1-.9-2-2-2h-2zm-6-2c0-1.65 1.35-3 3-3s3 1.35 3 3v2H8V7h2zm4 8.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
           </svg>
         </button>
+
+        {/* More options (sleep timer + speed) */}
+        <div className="relative" ref={extrasRef}>
+          <button onClick={() => setExtrasOpen(p => !p)} title="More options"
+            className={`p-1.5 rounded transition-colors ${(sleepTimer || playbackRate !== 1) ? 'text-green-500' : 'text-neutral-400 hover:text-white'}`}>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+            </svg>
+          </button>
+          {extrasOpen && (
+            <div className="absolute bottom-full right-0 mb-2 bg-neutral-800 rounded-lg shadow-2xl py-3 z-50 w-64 border border-neutral-700">
+              <div className="px-3 mb-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">Speed</div>
+                <div className="flex items-center gap-2">
+                  <input type="range" min={0.5} max={2} step={0.05} value={playbackRate}
+                    onChange={e => setPlaybackRate(+e.target.value)} className="flex-1" />
+                  <span className="text-xs text-neutral-300 tabular-nums w-10">{playbackRate.toFixed(2)}x</span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  {[0.75, 1, 1.25, 1.5].map(r => (
+                    <button key={r} onClick={() => setPlaybackRate(r)}
+                      className={`text-xs px-2 py-0.5 rounded ${playbackRate === r ? 'bg-white/15 text-white' : 'text-neutral-400 hover:text-white'}`}>
+                      {r}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-neutral-700 my-2" />
+              <div className="px-3">
+                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">Sleep timer</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[5, 15, 30, 60, 90].map(m => {
+                    const active = sleepTimer?.mode === 'time' && sleepTimer.endTime &&
+                      Math.abs((sleepTimer.endTime - Date.now()) / 60000 - m) < 0.5;
+                    return (
+                      <button key={m} onClick={() => startSleepTimer(m)}
+                        className={`text-xs py-1.5 rounded ${active ? 'bg-green-500 text-black font-semibold' : 'bg-neutral-700 hover:bg-neutral-600 text-white'}`}>
+                        {m} min
+                      </button>
+                    );
+                  })}
+                  <button onClick={() => startSleepTimer(0, 'end-of-track')}
+                    className={`text-xs py-1.5 rounded col-span-1 ${sleepTimer?.mode === 'end-of-track' ? 'bg-green-500 text-black font-semibold' : 'bg-neutral-700 hover:bg-neutral-600 text-white'}`}>
+                    End of track
+                  </button>
+                </div>
+                {sleepTimer && (
+                  <button onClick={() => startSleepTimer(null)}
+                    className="w-full mt-2 text-xs py-1.5 rounded bg-red-900/50 hover:bg-red-900 text-red-200">
+                    Cancel sleep timer
+                  </button>
+                )}
+              </div>
+              <div className="border-t border-neutral-700 my-2" />
+              <div className="px-3">
+                <button onClick={() => { toggleKaraoke(); setExtrasOpen(false); }}
+                  disabled={!currentTrack}
+                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-neutral-700 disabled:opacity-50 rounded flex items-center gap-2">
+                  <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 3v9.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                  </svg>
+                  Karaoke mode
+                </button>
+                {window.electronAPI && (
+                  <button onClick={() => { toggleMiniPlayer(); setExtrasOpen(false); }}
+                    className="w-full text-left px-2 py-1.5 text-sm hover:bg-neutral-700 rounded flex items-center gap-2">
+                    <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .89-2 2v14c0 1.1.9 2 2 2h18c1.1 0 1.99-.9 1.99-2L23 5c0-1.11-.9-2-2-2zm0 16.01H3V4.98h18v14.03z" />
+                    </svg>
+                    Mini player
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Volume */}
         <button onClick={() => setVolume(volume === 0 ? 0.7 : 0)} className="text-neutral-400 hover:text-white transition-colors ml-1">

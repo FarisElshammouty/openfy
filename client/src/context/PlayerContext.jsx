@@ -58,6 +58,11 @@ export function PlayerProvider({ children }) {
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showNowPlaying, setShowNowPlaying] = useState(false);
+  const [showKaraoke, setShowKaraoke] = useState(false);
+  const [miniPlayer, setMiniPlayer] = useState(false);
+  const [playbackRate, setPlaybackRateState] = useState(1);
+  const [sleepTimer, setSleepTimer] = useState(null); // { endTime, mode: 'time' | 'end-of-track' }
+  const sleepTimerRef = useRef(null);
 
   const sr = useRef({ queue: [], shuffle: false, repeat: 'off' });
   sr.current = { queue, shuffle, repeat };
@@ -79,7 +84,10 @@ export function PlayerProvider({ children }) {
     const a = audioRef.current;
     a.volume = volume;
     const onTime = () => setProgress(a.currentTime);
-    const onDur = () => setDuration(a.duration || 0);
+    const onDur = () => {
+      const d = a.duration;
+      setDuration(Number.isFinite(d) && d > 0 ? d : 0);
+    };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     a.addEventListener('timeupdate', onTime);
@@ -94,6 +102,11 @@ export function PlayerProvider({ children }) {
     const a = audioRef.current;
     const onEnd = () => {
       if (crossfadeStartedRef.current) { crossfadeStartedRef.current = false; return; }
+      // Sleep timer end-of-track mode
+      if (sleepTimer?.mode === 'end-of-track') {
+        setSleepTimer(null);
+        return;
+      }
       const { queue: q, shuffle: s, repeat: r } = sr.current;
       if (r === 'one') { a.currentTime = 0; a.play(); return; }
       if (s && q.length > 1) {
@@ -104,7 +117,7 @@ export function PlayerProvider({ children }) {
     };
     a.addEventListener('ended', onEnd);
     return () => a.removeEventListener('ended', onEnd);
-  }, []);
+  }, [sleepTimer]);
 
   // Crossfade pre-trigger - start next track early
   useEffect(() => {
@@ -134,6 +147,11 @@ export function PlayerProvider({ children }) {
     const prev = prevVideoRef.current;
     prevVideoRef.current = currentTrack.videoId;
     crossfadeStartedRef.current = false;
+
+    // Pre-seed duration from track metadata so the progress bar isn't 0:00 while streaming
+    if (currentTrack.duration > 0) setDuration(currentTrack.duration);
+    setProgress(0);
+    a.playbackRate = playbackRate;
 
     if (fadeOutRef.current) {
       clearInterval(fadeOutRef.current.timer);
@@ -355,6 +373,42 @@ export function PlayerProvider({ children }) {
   const toggleQueue = useCallback(() => { setShowQueue(p => !p); if (!showQueue) setShowLyrics(false); }, [showQueue]);
   const toggleLyrics = useCallback(() => { setShowLyrics(p => !p); if (!showLyrics) setShowQueue(false); }, [showLyrics]);
   const toggleNowPlaying = useCallback(() => { setShowNowPlaying(p => !p); }, []);
+  const toggleKaraoke = useCallback(() => { setShowKaraoke(p => !p); }, []);
+
+  const toggleMiniPlayer = useCallback(() => {
+    setMiniPlayer(p => {
+      const next = !p;
+      if (window.electronAPI) {
+        next ? window.electronAPI.enterMiniPlayer() : window.electronAPI.exitMiniPlayer();
+      }
+      return next;
+    });
+  }, []);
+
+  const setPlaybackRate = useCallback((r) => {
+    audioRef.current.playbackRate = r;
+    setPlaybackRateState(r);
+  }, []);
+
+  const startSleepTimer = useCallback((minutes, mode = 'time') => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    if (minutes === null) {
+      setSleepTimer(null);
+      sleepTimerRef.current = null;
+      return;
+    }
+    if (mode === 'end-of-track') {
+      setSleepTimer({ endTime: null, mode: 'end-of-track' });
+    } else {
+      const endTime = Date.now() + minutes * 60000;
+      setSleepTimer({ endTime, mode: 'time' });
+      sleepTimerRef.current = setTimeout(() => {
+        audioRef.current.pause();
+        setSleepTimer(null);
+        sleepTimerRef.current = null;
+      }, minutes * 60000);
+    }
+  }, []);
 
   const isLiked = useCallback(vid => likedIds.has(vid), [likedIds]);
   const toggleLike = useCallback(async (track) => {
@@ -372,10 +426,12 @@ export function PlayerProvider({ children }) {
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
-      crossfade, dominantColor, showQueue, showLyrics, showNowPlaying,
+      crossfade, dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer,
+      playbackRate, sleepTimer,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
-      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying,
+      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
+      setPlaybackRate, startSleepTimer,
       isLiked, toggleLike, playlists, refreshPlaylists
     }}>
       {children}

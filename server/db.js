@@ -50,6 +50,16 @@ db.exec(`
     last_played TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS saved_albums (
+    album_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    artist TEXT DEFAULT '',
+    artist_id TEXT DEFAULT '',
+    thumbnail TEXT DEFAULT '',
+    year TEXT DEFAULT '',
+    saved_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_pt_playlist ON playlist_tracks(playlist_id);
   CREATE INDEX IF NOT EXISTS idx_history_played ON play_history(last_played DESC);
 `);

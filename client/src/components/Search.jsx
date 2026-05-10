@@ -1,44 +1,72 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { api } from '../api';
 import TrackRow from './TrackRow';
+
+const TABS = [
+  { key: 'songs', label: 'Songs' },
+  { key: 'artists', label: 'Artists' },
+  { key: 'albums', label: 'Albums' }
+];
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQ = searchParams.get('q') || '';
+  const initialTab = searchParams.get('tab') || 'songs';
   const [query, setQuery] = useState(initialQ);
-  const [results, setResults] = useState(null);
+  const [tab, setTab] = useState(initialTab);
+  const [songs, setSongs] = useState(null);
+  const [artists, setArtists] = useState(null);
+  const [albums, setAlbums] = useState(null);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  useEffect(() => {
-    if (initialQ && !results) {
-      doSearch(initialQ);
+  function doSearch(q, t) {
+    if (!q.trim()) {
+      setSongs(null); setArtists(null); setAlbums(null);
+      return;
     }
-  }, []);
-
-  function doSearch(q) {
-    if (!q.trim()) { setResults(null); return; }
     setLoading(true);
-    api.search(q).then(setResults).catch(() => setResults({ items: [] })).finally(() => setLoading(false));
+    const fn = t === 'artists' ? api.searchArtists : t === 'albums' ? api.searchAlbums : api.search;
+    fn(q)
+      .then(r => {
+        if (t === 'artists') setArtists(r);
+        else if (t === 'albums') setAlbums(r);
+        else setSongs(r);
+      })
+      .catch(() => {
+        if (t === 'artists') setArtists({ items: [] });
+        else if (t === 'albums') setAlbums({ items: [] });
+        else setSongs({ items: [] });
+      })
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => {
+    if (initialQ) doSearch(initialQ, tab);
+  }, []);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { setResults(null); return; }
+    if (!query.trim()) { setSongs(null); setArtists(null); setAlbums(null); return; }
     debounceRef.current = setTimeout(() => {
-      setSearchParams(query.trim() ? { q: query.trim() } : {}, { replace: true });
-      doSearch(query.trim());
+      const params = { q: query.trim() };
+      if (tab !== 'songs') params.tab = tab;
+      setSearchParams(params, { replace: true });
+      doSearch(query.trim(), tab);
     }, 400);
     return () => clearTimeout(debounceRef.current);
-  }, [query]);
+  }, [query, tab]);
+
+  const results = tab === 'artists' ? artists : tab === 'albums' ? albums : songs;
+  const hasResults = results?.items?.length > 0;
 
   return (
     <div className="p-6 pt-16">
-      <div className="mb-6">
+      <div className="mb-4">
         <div className="relative max-w-lg">
           <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" viewBox="0 0 24 24" fill="currentColor">
             <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 5L20.49 19l-5-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
@@ -47,7 +75,7 @@ export default function Search() {
             placeholder="What do you want to listen to?"
             className="w-full bg-neutral-800 text-white pl-12 pr-4 py-3.5 rounded-full text-sm outline-none focus:ring-2 focus:ring-white/20 placeholder:text-neutral-500" />
           {query && (
-            <button onClick={() => { setQuery(''); setResults(null); inputRef.current?.focus(); }}
+            <button onClick={() => { setQuery(''); setSongs(null); setArtists(null); setAlbums(null); inputRef.current?.focus(); }}
               className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white">
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
             </button>
@@ -55,24 +83,60 @@ export default function Search() {
         </div>
       </div>
 
+      {query && (
+        <div className="flex gap-2 mb-6">
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${tab === t.key ? 'bg-white text-black' : 'bg-neutral-800 text-white hover:bg-neutral-700'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && <div className="text-neutral-500 py-12 text-center">Searching...</div>}
 
-      {!loading && !results && (
+      {!loading && !query && (
         <div className="text-neutral-500 py-20 text-center text-lg">Search for songs, artists, or albums</div>
       )}
 
-      {!loading && results && results.items?.length === 0 && (
+      {!loading && query && !hasResults && (
         <div className="text-neutral-500 py-20 text-center">No results found for &ldquo;{query}&rdquo;</div>
       )}
 
-      {!loading && results?.items?.length > 0 && (
-        <div>
-          <h2 className="text-xl font-bold mb-3">Songs</h2>
-          <div className="space-y-0.5">
-            {results.items.map((t, i) => (
-              <TrackRow key={t.videoId + i} track={t} index={i} tracks={results.items} />
-            ))}
-          </div>
+      {!loading && tab === 'songs' && hasResults && (
+        <div className="space-y-0.5">
+          {songs.items.map((t, i) => <TrackRow key={t.videoId + i} track={t} index={i} tracks={songs.items} />)}
+        </div>
+      )}
+
+      {!loading && tab === 'artists' && hasResults && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {artists.items.map(a => (
+            <Link key={a.id} to={`/artist/${a.id}`}
+              className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors text-center">
+              <div className="aspect-square rounded-full mb-3 bg-neutral-800 overflow-hidden mx-auto">
+                {a.thumbnail && <img src={a.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+              </div>
+              <div className="font-semibold text-sm truncate">{a.name}</div>
+              <div className="text-xs text-neutral-400 truncate">Artist{a.subscribers ? ` · ${a.subscribers}` : ''}</div>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {!loading && tab === 'albums' && hasResults && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {albums.items.map(a => (
+            <Link key={a.id} to={`/album/${a.id}`}
+              className="bg-neutral-800/40 hover:bg-neutral-800 rounded-md p-3 transition-colors">
+              <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden">
+                {a.thumbnail && <img src={a.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+              </div>
+              <div className="font-semibold text-sm truncate">{a.title}</div>
+              <div className="text-xs text-neutral-400 truncate">{a.artist || 'Album'}{a.year ? ` · ${a.year}` : ''}</div>
+            </Link>
+          ))}
         </div>
       )}
     </div>

@@ -18,6 +18,7 @@ const GENRES = [
 export default function Home() {
   const [trending, setTrending] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [mixes, setMixes] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { playTrack, currentTrack } = usePlayer();
@@ -28,6 +29,7 @@ export default function Home() {
 
   useEffect(() => {
     api.getHistory().then(setRecent).catch(() => {});
+    api.getMixes().then(d => setMixes(d.mixes || [])).catch(() => {});
   }, [currentTrack?.videoId]);
 
   const greeting = () => {
@@ -57,6 +59,28 @@ export default function Home() {
                 <span className="opacity-0 group-hover:opacity-100 transition-opacity w-9 h-9 rounded-full bg-green-500 flex items-center justify-center text-black shrink-0">
                   <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
                 </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {mixes.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-bold mb-4">Made for you</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {mixes.map(m => (
+              <button key={m.id} onClick={() => m.tracks?.length && playTrack(m.tracks[0], m.tracks)}
+                className="bg-neutral-800/50 hover:bg-neutral-800 rounded-md p-3 text-left transition-colors group">
+                <div className="aspect-square rounded mb-3 bg-neutral-800 overflow-hidden relative">
+                  {m.thumbnail && <img src={m.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="absolute bottom-2 right-2 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                  </span>
+                </div>
+                <div className="font-semibold text-sm truncate">{m.name}</div>
+                <div className="text-xs text-neutral-400 line-clamp-2">{m.subtitle}</div>
               </button>
             ))}
           </div>

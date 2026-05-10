@@ -14,6 +14,8 @@ async function request(path, opts = {}) {
 
 export const api = {
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
+  searchArtists: (q) => request(`/search/artists?q=${encodeURIComponent(q)}`),
+  searchAlbums: (q) => request(`/search/albums?q=${encodeURIComponent(q)}`),
   trending: (region) => request(`/trending?region=${region || 'US'}`),
   suggestions: (videoId) => request(`/suggestions/${videoId}`),
 
@@ -35,7 +37,13 @@ export const api = {
 
   getArtist: (id) => request(`/artist/${id}`),
   getAlbum: (id) => request(`/album/${id}`),
+  getSavedAlbums: () => request('/saved-albums'),
+  saveAlbum: (album) => request('/saved-albums', { method: 'POST', body: JSON.stringify(album) }),
+  unsaveAlbum: (id) => request(`/saved-albums/${id}`, { method: 'DELETE' }),
   getHistory: () => request('/history'),
+  getStats: () => request('/stats'),
+  getMixes: () => request('/mixes'),
+  importPlaylist: (url) => request('/import-playlist', { method: 'POST', body: JSON.stringify({ url }) }),
   recordPlay: (track) => fetch(`${API}/history`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -28,6 +28,10 @@ export default function Sidebar() {
           <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 5L20.49 19l-5-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg>
           Search
         </NavLink>
+        <NavLink to="/stats" className={navCls}>
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z" /></svg>
+          Stats
+        </NavLink>
       </nav>
 
       <div className="bg-neutral-900 rounded-lg p-3 flex-1 overflow-hidden flex flex-col">

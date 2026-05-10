@@ -163,6 +163,26 @@ ipcMain.on('track-info', (_event, info) => {
   updateTrayMenu();
 });
 
+let normalBounds = null;
+let isMini = false;
+
+ipcMain.on('mini-player', (_event, action) => {
+  if (!mainWindow) return;
+  if (action === 'enter' && !isMini) {
+    normalBounds = mainWindow.getBounds();
+    mainWindow.setMinimumSize(280, 110);
+    mainWindow.setSize(320, 140);
+    mainWindow.setAlwaysOnTop(true);
+    isMini = true;
+  } else if (action === 'exit' && isMini) {
+    mainWindow.setMinimumSize(900, 600);
+    if (normalBounds) mainWindow.setBounds(normalBounds);
+    else mainWindow.setSize(1280, 800);
+    mainWindow.setAlwaysOnTop(false);
+    isMini = false;
+  }
+});
+
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {

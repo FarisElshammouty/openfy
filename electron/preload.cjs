@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   sendTrackInfo: (info) => {
     ipcRenderer.send('track-info', info);
-  }
+  },
+  enterMiniPlayer: () => ipcRenderer.send('mini-player', 'enter'),
+  exitMiniPlayer: () => ipcRenderer.send('mini-player', 'exit')
 });
