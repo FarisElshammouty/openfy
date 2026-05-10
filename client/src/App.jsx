@@ -13,6 +13,7 @@ import QueuePanel from './components/QueuePanel';
 import Lyrics from './components/Lyrics';
 import NowPlaying from './components/NowPlaying';
 import Karaoke from './components/Karaoke';
+import Visualizer from './components/Visualizer';
 import MiniPlayer from './components/MiniPlayer';
 import Stats from './components/Stats';
 import Settings from './components/Settings';
@@ -39,7 +40,7 @@ function NavControls() {
 }
 
 function MainLayout() {
-  const { dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer, showSettings } = usePlayer();
+  const { dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, showVisualizer, miniPlayer, showSettings } = usePlayer();
 
   if (miniPlayer) return <MiniPlayer />;
 
@@ -72,6 +73,7 @@ function MainLayout() {
       <Player />
       {showNowPlaying && <NowPlaying />}
       {showKaraoke && <Karaoke />}
+      {showVisualizer && <Visualizer />}
       {showSettings && <Settings />}
     </div>
   );

@@ -65,6 +65,9 @@ export function PlayerProvider({ children }) {
   const [audioOutputDeviceId, setAudioOutputDeviceId] = useState(loadPref('openfy.audioOutput', 'default'));
   const [lyricsTranslate, setLyricsTranslate] = useState(loadPref('openfy.lyricsTranslate', null)); // null or target lang code
   const [showSettings, setShowSettings] = useState(false);
+  const [showVisualizer, setShowVisualizer] = useState(false);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
   const [queue, setQueue] = useState(lastTrack ? [lastTrack] : []);
   const [queueIndex, setQueueIndex] = useState(lastTrack ? 0 : -1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -524,6 +527,54 @@ export function PlayerProvider({ children }) {
 
   const toggleSettings = useCallback(() => setShowSettings(p => !p), []);
 
+  // Web Audio analyser — initialised lazily on first request. The audio element can
+  // only have ONE MediaElementSource, so we create it once and reuse.
+  const getAnalyser = useCallback(() => {
+    if (analyserRef.current) {
+      // Resume context if it got suspended by browser policy
+      audioCtxRef.current?.resume?.().catch(() => {});
+      return analyserRef.current;
+    }
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaElementSource(audioRef.current);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.75;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      analyserRef.current = analyser;
+      ctx.resume().catch(() => {});
+      return analyser;
+    } catch (e) {
+      console.warn('[Openfy] Could not init Web Audio analyser:', e.message);
+      return null;
+    }
+  }, []);
+
+  const toggleVisualizer = useCallback(() => {
+    setShowVisualizer(p => {
+      const next = !p;
+      if (next) {
+        // Initialize analyser. If audio was playing, briefly pause+play to force
+        // the AudioContext routing to take effect (otherwise the first session
+        // shows zero data until user toggles play).
+        const wasPlaying = !audioRef.current.paused;
+        getAnalyser();
+        if (wasPlaying) {
+          audioRef.current.pause();
+          setTimeout(() => audioRef.current.play().catch(() => {}), 30);
+        }
+        setShowNowPlaying(false);
+        setShowKaraoke(false);
+      }
+      return next;
+    });
+  }, [getAnalyser]);
+
   const toggleMiniPlayer = useCallback(() => {
     setMiniPlayer(p => {
       const next = !p;
@@ -634,6 +685,7 @@ export function PlayerProvider({ children }) {
       homeLayout, setHomeLayout, crossfadeDuration, setCrossfadeDuration,
       audioOutputDeviceId, setAudioOutputDeviceId, lyricsTranslate, setLyricsTranslate,
       showSettings, toggleSettings,
+      showVisualizer, toggleVisualizer, getAnalyser,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
       toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,

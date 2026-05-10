@@ -13,7 +13,7 @@ export default function Player() {
     crossfade, showQueue, showLyrics, playbackRate, sleepTimer,
     togglePlay, playNext, playPrev, seek, setVolume, toggleShuffle, toggleRepeat,
     toggleCrossfade, toggleQueue, toggleLyrics,
-    isLiked, toggleLike, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
+    isLiked, toggleLike, toggleNowPlaying, toggleKaraoke, toggleVisualizer, toggleMiniPlayer,
     setPlaybackRate, startSleepTimer
   } = usePlayer();
   const navigate = useNavigate();
@@ -183,6 +183,14 @@ export default function Player() {
                     <path d="M12 3v9.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                   </svg>
                   Karaoke mode
+                </button>
+                <button onClick={() => { toggleVisualizer(); setExtrasOpen(false); }}
+                  disabled={!currentTrack}
+                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-neutral-700 disabled:opacity-50 rounded flex items-center gap-2">
+                  <svg className="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z" />
+                  </svg>
+                  Visualizer
                 </button>
                 {window.electronAPI && (
                   <button onClick={() => { toggleMiniPlayer(); setExtrasOpen(false); }}
