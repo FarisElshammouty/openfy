@@ -163,8 +163,9 @@ export default function Settings() {
                     <span className="text-sm">{HOME_SECTIONS[key]}</span>
                   </div>
                   <button onClick={() => toggleSection(key)}
-                    className={`w-10 h-6 rounded-full relative transition-colors ${homeLayout.hidden.includes(key) ? 'bg-neutral-700' : 'bg-green-500'}`}>
-                    <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${homeLayout.hidden.includes(key) ? 'translate-x-1' : 'translate-x-5'}`} />
+                    aria-pressed={!homeLayout.hidden.includes(key)}
+                    className={`shrink-0 w-10 h-6 rounded-full p-0.5 flex items-center transition-colors ${homeLayout.hidden.includes(key) ? 'bg-neutral-700 justify-start' : 'bg-green-500 justify-end'}`}>
+                    <span className="w-5 h-5 rounded-full bg-white shadow" />
                   </button>
                 </div>
               ))}
@@ -182,8 +183,9 @@ export default function Settings() {
                   <div className="text-xs text-neutral-400">Smoothly blend the end of a track into the next</div>
                 </div>
                 <button onClick={toggleCrossfade}
-                  className={`w-10 h-6 rounded-full relative transition-colors ${crossfade ? 'bg-green-500' : 'bg-neutral-700'}`}>
-                  <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${crossfade ? 'translate-x-5' : 'translate-x-1'}`} />
+                  aria-pressed={crossfade}
+                  className={`shrink-0 w-10 h-6 rounded-full p-0.5 flex items-center transition-colors ${crossfade ? 'bg-green-500 justify-end' : 'bg-neutral-700 justify-start'}`}>
+                  <span className="w-5 h-5 rounded-full bg-white shadow" />
                 </button>
               </div>
 
