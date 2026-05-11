@@ -61,6 +61,8 @@ function freqBandColor(t, alpha = 1) {
 }
 
 // Detect a beat by tracking bass-band energy over the last ~1s and looking for spikes.
+// Also returns the current bass-energy (0..1) so modes can react continuously even
+// when no transient is detected (e.g. ambient/vocal tracks with steady bass).
 function makeOnsetDetector() {
   const history = [];
   let lastBeat = 0;
@@ -72,11 +74,14 @@ function makeOnsetDetector() {
     if (history.length > 50) history.shift();
     const avg = history.reduce((a, b) => a + b, 0) / history.length;
     const now = performance.now();
-    if (bass > avg * 1.4 && bass > 60 && now - lastBeat > 200) {
+    let onset = 0;
+    // Looser thresholds so quieter / less-percussive tracks still produce beats.
+    if (bass > avg * 1.2 && bass > 35 && now - lastBeat > 200) {
       lastBeat = now;
-      return Math.min(1, (bass - avg) / 80);
+      onset = Math.min(1, (bass - avg) / 60);
     }
-    return 0;
+    // Expose energy too — particles use this as a continuous baseline.
+    return { onset, energy: Math.min(1, bass / 200) };
   };
 }
 
@@ -231,17 +236,17 @@ export default function Visualizer() {
       const w = window.innerWidth, h = window.innerHeight;
       analyser.getByteFrequencyData(freqData);
       analyser.getByteTimeDomainData(waveData);
-      const beat = beatRef.current(freqData);
+      const { onset, energy } = beatRef.current(freqData);
 
       // ─── Mode dispatch ─────────────────────────────────────────────────
       if (mode === 'bars') drawBars(ctx, freqData, w, h, smoothedRef.current);
       else if (mode === 'circular') drawCircular(ctx, freqData, w, h, smoothedRef.current, imageRef.current, accent);
       else if (mode === 'wave') drawWave(ctx, waveData, w, h, accent);
-      else if (mode === 'particles') drawParticles(ctx, freqData, w, h, particlesRef.current, beat, accent);
+      else if (mode === 'particles') drawParticles(ctx, freqData, w, h, particlesRef.current, onset, energy, accent);
       else if (mode === 'bars3d') drawBars3D(ctx, freqData, w, h, smoothedRef.current);
-      else if (mode === 'sunburst') drawSunburst(ctx, freqData, w, h, smoothedRef.current, imageRef.current, accent, beat);
+      else if (mode === 'sunburst') drawSunburst(ctx, freqData, w, h, smoothedRef.current, imageRef.current, accent, onset);
       else if (mode === 'vinyl') drawVinyl(ctx, freqData, w, h, imageRef.current, vinylRotRef, isPlaying, accent);
-      else if (mode === 'kaleidoscope') drawKaleidoscope(ctx, freqData, w, h, imageRef.current, kaleidoRotRef, accent, beat);
+      else if (mode === 'kaleidoscope') drawKaleidoscope(ctx, freqData, w, h, imageRef.current, kaleidoRotRef, accent, onset);
       else if (mode === 'landscape') drawLandscape(ctx, freqData, w, h, landscapeBufRef.current, accent);
       else if (mode === 'oscilloscope') drawOscilloscope(ctx, waveData, w, h);
 
@@ -335,9 +340,10 @@ export default function Visualizer() {
       {/* Snapshot flash */}
       {snapshotFlash && <div className="absolute inset-0 bg-white animate-[ping_0.2s] pointer-events-none" />}
 
-      {/* Lyrics overlay (bottom-center, fades in/out per line) */}
+      {/* Lyrics overlay (bottom-center, fades in/out per line).
+          Sits above the controls when visible so it never overlaps the mode tabs. */}
       {showLyricsOverlay && currentLyric && (
-        <div className="absolute bottom-32 left-0 right-0 text-center pointer-events-none px-8">
+        <div className={`absolute left-0 right-0 text-center pointer-events-none px-8 transition-[bottom] duration-300 ${controlsVisible ? 'bottom-56' : 'bottom-32'}`}>
           <p className="text-3xl font-bold text-white drop-shadow-2xl transition-opacity duration-300"
             style={{ textShadow: '0 4px 24px rgba(0,0,0,0.8)' }}>
             {currentLyric.text}
@@ -526,7 +532,7 @@ function drawWave(ctx, waveData, w, h, accent) {
   ctx.shadowBlur = 0;
 }
 
-function drawParticles(ctx, freqData, w, h, particles, beat, accent) {
+function drawParticles(ctx, freqData, w, h, particles, onset, energy, accent) {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
   ctx.fillRect(0, 0, w, h);
 
@@ -535,21 +541,37 @@ function drawParticles(ctx, freqData, w, h, particles, beat, accent) {
   for (let i = freqData.length / 2; i < freqData.length * 0.75; i++) highEnergy += freqData[i];
   highEnergy /= (freqData.length * 0.25 * 255);
 
-  // Spawn on actual beats (onset detection passed in via `beat`)
-  if (beat > 0 && particles.length < 400) {
-    const count = Math.floor(8 + beat * 24);
+  // Total energy across all bands for ambient/continuous spawning
+  let totalEnergy = 0;
+  for (let i = 0; i < freqData.length; i++) totalEnergy += freqData[i];
+  totalEnergy /= (freqData.length * 255);
+
+  const spawn = (count, speedMul, sizeMul) => {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 3 + beat * 14 + Math.random() * 4;
+      const speed = (1 + Math.random() * 3) * speedMul;
       const t = Math.random();
       particles.push({
         x: w / 2, y: h / 2,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        life: 1, size: 2 + Math.random() * 4,
+        life: 1, size: (1.5 + Math.random() * 3) * sizeMul,
         hue: 360 - t * 280
       });
     }
+  };
+
+  // Continuous baseline: spawn proportional to total energy so any track
+  // with sound produces particles (even without sharp beats).
+  if (particles.length < 350 && totalEnergy > 0.05) {
+    const baselineCount = Math.floor(totalEnergy * 6 + Math.random() * 2);
+    spawn(baselineCount, 1 + totalEnergy * 3, 1);
+  }
+
+  // Burst on detected onsets
+  if (onset > 0 && particles.length < 500) {
+    const count = Math.floor(10 + onset * 30);
+    spawn(count, 3 + onset * 12, 1.4);
   }
 
   ctx.shadowBlur = 10;
@@ -568,10 +590,10 @@ function drawParticles(ctx, freqData, w, h, particles, beat, accent) {
   }
   ctx.shadowBlur = 0;
 
-  // Central pulsing core
-  const coreR = 30 + highEnergy * 80 + beat * 60;
+  // Central pulsing core — uses high energy + onset
+  const coreR = 30 + highEnergy * 80 + onset * 60;
   const grd = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, coreR);
-  grd.addColorStop(0, `rgba(${accent.r},${accent.g},${accent.b},${0.4 + highEnergy * 0.4 + beat * 0.3})`);
+  grd.addColorStop(0, `rgba(${accent.r},${accent.g},${accent.b},${0.4 + highEnergy * 0.4 + onset * 0.3})`);
   grd.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grd;
   ctx.beginPath();
