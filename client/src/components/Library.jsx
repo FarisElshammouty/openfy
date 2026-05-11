@@ -23,7 +23,10 @@ export default function Library() {
   }, []);
 
   const [showImport, setShowImport] = useState(false);
+  const [importMode, setImportMode] = useState('url'); // 'url' | 'paste'
   const [importUrl, setImportUrl] = useState('');
+  const [pasteName, setPasteName] = useState('');
+  const [pasteText, setPasteText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
 
@@ -38,11 +41,17 @@ export default function Library() {
   };
 
   const handleImport = async () => {
-    if (!importUrl.trim()) return;
     setImporting(true);
     setImportResult(null);
     try {
-      const r = await api.importPlaylist(importUrl.trim());
+      let r;
+      if (importMode === 'url') {
+        if (!importUrl.trim()) { setImporting(false); return; }
+        r = await api.importPlaylist(importUrl.trim());
+      } else {
+        if (!pasteText.trim()) { setImporting(false); return; }
+        r = await api.importTracklist(pasteName.trim() || 'Imported tracklist', pasteText.trim());
+      }
       setImportResult({ ok: true, ...r });
       await refreshPlaylists();
     } catch (e) {
@@ -159,22 +168,60 @@ export default function Library() {
 
         {showImport && (
           <div className="bg-neutral-800/40 rounded-lg p-4 mb-4 max-w-2xl">
-            <div className="text-sm font-semibold mb-2">Import from Spotify</div>
-            <p className="text-xs text-neutral-400 mb-3">Paste a Spotify playlist URL. Tracks will be searched on YouTube and added to a new local playlist.</p>
-            <div className="flex gap-2">
-              <input type="text" value={importUrl} onChange={e => setImportUrl(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/..."
-                className="flex-1 bg-neutral-900 text-white text-sm px-3 py-2 rounded outline-none focus:ring-2 focus:ring-white/20" />
-              <button onClick={handleImport} disabled={importing || !importUrl.trim()}
-                className="bg-green-500 text-black px-4 py-2 rounded text-sm font-semibold hover:bg-green-400 disabled:opacity-50">
-                {importing ? 'Importing...' : 'Import'}
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => { setImportMode('url'); setImportResult(null); }}
+                className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${importMode === 'url' ? 'bg-white text-black' : 'bg-neutral-800 text-white hover:bg-neutral-700'}`}>
+                From URL
+              </button>
+              <button onClick={() => { setImportMode('paste'); setImportResult(null); }}
+                className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${importMode === 'paste' ? 'bg-white text-black' : 'bg-neutral-800 text-white hover:bg-neutral-700'}`}>
+                Paste tracklist
               </button>
             </div>
+
+            {importMode === 'url' ? (
+              <>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Paste a <strong>Spotify</strong> or <strong>Anghami</strong> playlist URL. Each track will be searched on YouTube.
+                  Anghami imports the playlist preview only (3-5 tracks) — for the full list, paste the tracklist instead.
+                </p>
+                <div className="flex gap-2">
+                  <input type="text" value={importUrl} onChange={e => setImportUrl(e.target.value)}
+                    placeholder="https://open.spotify.com/playlist/... or https://open.anghami.com/..."
+                    className="flex-1 bg-neutral-900 text-white text-sm px-3 py-2 rounded outline-none focus:ring-2 focus:ring-white/20" />
+                  <button onClick={handleImport} disabled={importing || !importUrl.trim()}
+                    className="bg-green-500 text-black px-4 py-2 rounded text-sm font-semibold hover:bg-green-400 disabled:opacity-50">
+                    {importing ? 'Importing...' : 'Import'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Paste one track per line. Most formats are recognized:
+                  <span className="block mt-1 font-mono text-neutral-500">Artist - Title<br />Title by Artist<br />Title, Artist</span>
+                </p>
+                <input type="text" value={pasteName} onChange={e => setPasteName(e.target.value)}
+                  placeholder="Playlist name"
+                  className="w-full bg-neutral-900 text-white text-sm px-3 py-2 rounded outline-none focus:ring-2 focus:ring-white/20 mb-2" />
+                <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
+                  placeholder="The Rapture Pt.III - &ME & Black Coffee
+BODY by Levi
+Fire Fire by Shimza"
+                  rows={6}
+                  className="w-full bg-neutral-900 text-white text-sm px-3 py-2 rounded outline-none focus:ring-2 focus:ring-white/20 mb-2 font-mono" />
+                <button onClick={handleImport} disabled={importing || !pasteText.trim()}
+                  className="bg-green-500 text-black px-4 py-2 rounded text-sm font-semibold hover:bg-green-400 disabled:opacity-50">
+                  {importing ? 'Importing...' : `Import ${pasteText.split('\n').filter(l => l.trim()).length} tracks`}
+                </button>
+              </>
+            )}
+
             {importResult && (
               <div className={`mt-3 text-sm ${importResult.ok ? 'text-green-400' : 'text-red-400'}`}>
                 {importResult.ok
                   ? <button onClick={() => navigate(`/playlist/${importResult.playlistId}`)} className="hover:underline">
-                      Imported "{importResult.name}" — {importResult.added}/{importResult.total} tracks added
+                      Imported "{importResult.name}" — {importResult.added}/{importResult.total} tracks added{importResult.partial ? ' (preview only — paste tracklist for the full playlist)' : ''}
                     </button>
                   : `Error: ${importResult.error}`}
               </div>

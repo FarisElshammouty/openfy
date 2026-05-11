@@ -60,6 +60,7 @@ export const api = {
   clearRecentSearches: () => request('/recent-searches', { method: 'DELETE' }),
   imgProxyUrl: (url) => `${API}/img-proxy?url=${encodeURIComponent(url)}`,
   importPlaylist: (url) => request('/import-playlist', { method: 'POST', body: JSON.stringify({ url }) }),
+  importTracklist: (name, text) => request('/import-tracklist', { method: 'POST', body: JSON.stringify({ name, text }) }),
   recordPlay: (track) => fetch(`${API}/history`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

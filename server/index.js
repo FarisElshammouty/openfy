@@ -941,6 +941,80 @@ async function importSpotify(playlistId) {
   };
 }
 
+// Anghami full playlists require auth (can't bypass), so we extract the public
+// preview from the Open Graph metadata. This gives us the playlist title plus
+// 3-5 tracks the description highlights. Users are told to paste the full
+// tracklist for a complete import.
+async function importAnghami(idOrShort, { isShort = false } = {}) {
+  // The short URL host (open.anghami.com) serves OG metadata cleanly to
+  // crawler UAs; the main host (play.anghami.com) is gated by bot detection
+  // and rate-limits aggressively. So we prefer short URLs.
+  const urls = isShort
+    ? [`https://open.anghami.com/${idOrShort}`, `https://play.anghami.com/playlist/${idOrShort}`]
+    : [`https://play.anghami.com/playlist/${idOrShort}`];
+
+  const crawlerUAs = [
+    'facebookexternalhit/1.1',
+    'WhatsApp/2.21.12.21 A',
+    'Twitterbot/1.0',
+    'TelegramBot (like TwitterBot)',
+    'Slackbot-LinkExpanding 1.0'
+  ];
+
+  let html = null;
+  let lastStatus = 0;
+  outer: for (const url of urls) {
+    for (const ua of crawlerUAs) {
+      try {
+        const r = await fetch(url, {
+          headers: { 'User-Agent': ua, 'Accept': 'text/html' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10000)
+        });
+        lastStatus = r.status;
+        if (r.ok) {
+          const body = await r.text();
+          // Must contain OG description with track info — bot-challenge pages don't
+          if (body.includes('og:description') || body.includes('og:title')) {
+            html = body;
+            break outer;
+          }
+        }
+      } catch {}
+    }
+  }
+  if (!html) throw new Error(`Anghami fetch failed (${lastStatus || 'network'})`);
+
+  // Title from <title> or og:title (strip " | Play on Anghami" suffix)
+  let title = 'Anghami Playlist';
+  const tm = html.match(/<title>([^<]+)<\/title>/i) || html.match(/property="og:title"\s+content="([^"]+)"/i);
+  if (tm) title = tm[1].replace(/\s*\|\s*Play on Anghami\s*$/i, '').replace(/\s*playlist\s*$/i, '').trim();
+
+  // Description includes a few sample tracks: "...songs like A by ArtistA, B by ArtistB, and C by ArtistC"
+  let description = '';
+  const dm = html.match(/property="og:description"\s+content="([^"]+)"/i)
+    || html.match(/name="description"\s+content="([^"]+)"/i)
+    || html.match(/name="twitter:description"\s+content="([^"]+)"/i);
+  if (dm) description = dm[1];
+
+  const tracks = [];
+  // Pattern: "songs like X by Y, A by B, and C by D"
+  // Use greedy match through end of string — OG descriptions are single sentences,
+  // and a non-greedy match would stop at the first period (e.g. "Pt.III").
+  const sample = description.match(/(?:songs like|including|tracks like)\s+(.+)$/i);
+  if (sample) {
+    const tail = sample[1]
+      .replace(/\s+and\s+/i, ', ')          // normalise " and " to comma so split works
+      .replace(/\s*,\s*/g, '|||');           // marker
+    for (const chunk of tail.split('|||')) {
+      const m = chunk.match(/^(.+?)\s+by\s+(.+)$/i);
+      if (m) tracks.push({ title: m[1].trim(), artist: m[2].trim() });
+    }
+  }
+
+  return { name: title, tracks, partial: true };
+}
+
 async function searchYoutubeForTrack(query) {
   try {
     const data = await piped(`/search?q=${encodeURIComponent(query)}&filter=music_songs`);
@@ -952,43 +1026,128 @@ async function searchYoutubeForTrack(query) {
   }
 }
 
+// Resolve any pasted URL to a normalized playlist ID + source
+function detectImportSource(url) {
+  const spotify = url.match(/spotify\.com\/(?:embed\/)?playlist\/([a-zA-Z0-9]+)/);
+  if (spotify) return { source: 'spotify', id: spotify[1] };
+  // Anghami: play.anghami.com/playlist/123, www.anghami.com/playlist/123, anghami.com/playlist/123, open.anghami.com/<short>
+  const anghami = url.match(/anghami\.com\/playlist\/(\d+)/);
+  if (anghami) return { source: 'anghami', id: anghami[1] };
+  const anghamiShort = url.match(/open\.anghami\.com\/([A-Za-z0-9]+)/);
+  if (anghamiShort) return { source: 'anghami-short', id: anghamiShort[1] };
+  return null;
+}
+
+// Follow Anghami short links to get the real numeric playlist ID
+async function resolveAnghamiShort(short) {
+  // Follow redirects fully — `redirect: 'manual'` in undici filters the Location header.
+  const r = await fetch(`https://open.anghami.com/${short}`, {
+    headers: { 'User-Agent': 'curl/8.0' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(8000)
+  });
+  // The final URL after redirects (may be a bot-challenge page but the URL itself is the playlist)
+  const finalUrl = r.url || '';
+  const m = finalUrl.match(/playlist\/(\d+)/);
+  if (!m) throw new Error('Anghami short link does not point to a playlist');
+  return m[1];
+}
+
+async function searchAndInsert(playlistId, tracks) {
+  let added = 0;
+  let position = 0;
+  for (const t of tracks) {
+    const query = `${t.title} ${t.artist || ''}`.trim();
+    const found = await searchYoutubeForTrack(query);
+    if (!found) continue;
+    try {
+      db.prepare('INSERT INTO playlist_tracks (playlist_id,video_id,title,artist,thumbnail,duration,position) VALUES(?,?,?,?,?,?,?)')
+        .run(playlistId, found.videoId, found.title, found.artist, found.thumbnail || '', found.duration || 0, position++);
+      added++;
+    } catch {}
+  }
+  return added;
+}
+
 app.post('/api/import-playlist', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
+    const detected = detectImportSource(url);
+    if (!detected) return res.status(400).json({ error: 'Supported sources: Spotify, Anghami' });
+
     let source;
-    const sm = url.match(/spotify\.com\/(?:embed\/)?playlist\/([a-zA-Z0-9]+)/);
-    if (sm) {
-      source = await importSpotify(sm[1]);
-    } else {
-      return res.status(400).json({ error: 'Only Spotify playlist URLs supported for now' });
+    let descriptionLabel = '';
+    if (detected.source === 'spotify') {
+      source = await importSpotify(detected.id);
+      descriptionLabel = 'Imported from Spotify';
+    } else if (detected.source === 'anghami') {
+      source = await importAnghami(detected.id, { isShort: false });
+      descriptionLabel = 'Imported from Anghami (preview only)';
+    } else if (detected.source === 'anghami-short') {
+      // Hit the short URL directly — open.anghami.com serves OG metadata cleanly
+      source = await importAnghami(detected.id, { isShort: true });
+      descriptionLabel = 'Imported from Anghami (preview only)';
     }
 
     if (!source.tracks.length) return res.status(400).json({ error: 'No tracks found' });
 
     const result = db.prepare('INSERT INTO playlists (name, description) VALUES (?, ?)')
-      .run(source.name, 'Imported from Spotify');
+      .run(source.name, descriptionLabel);
     const playlistId = Number(result.lastInsertRowid);
-
-    let added = 0;
-    let position = 0;
-    for (const t of source.tracks) {
-      const query = `${t.title} ${t.artist}`.trim();
-      const found = await searchYoutubeForTrack(query);
-      if (!found) continue;
-      try {
-        db.prepare('INSERT INTO playlist_tracks (playlist_id,video_id,title,artist,thumbnail,duration,position) VALUES(?,?,?,?,?,?,?)')
-          .run(playlistId, found.videoId, found.title, found.artist, found.thumbnail || '', found.duration || 0, position++);
-        added++;
-      } catch {}
-    }
+    const added = await searchAndInsert(playlistId, source.tracks);
 
     res.json({
       playlistId,
       name: source.name,
       total: source.tracks.length,
-      added
+      added,
+      partial: !!source.partial
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generic paste-tracklist import — works for any source. User pastes a text
+// block, one track per line. We try several common formats:
+//   "Artist - Title"
+//   "Title - Artist"
+//   "Title by Artist"
+//   "Title — Artist"
+//   numbered: "1. Title - Artist"
+app.post('/api/import-tracklist', async (req, res) => {
+  const { name, text } = req.body;
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: 'text required' });
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return res.status(400).json({ error: 'No lines found' });
+
+  // Heuristic parser: try multiple separators
+  const tracks = lines.map(line => {
+    // Strip leading numbering ("1.", "01)", "- ", etc.)
+    line = line.replace(/^[\s\d]+[.)\-:]\s*/, '').replace(/^[-•]\s*/, '');
+    // Try " by " first (clearer: "Title by Artist")
+    let m = line.match(/^(.+?)\s+by\s+(.+)$/i);
+    if (m) return { title: m[1].trim(), artist: m[2].trim() };
+    // Em-dash / en-dash / hyphen separator
+    m = line.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+    if (m) {
+      // Ambiguous which side is title vs artist — keep as-is; the search will work either way
+      return { title: m[2].trim(), artist: m[1].trim() };
+    }
+    // Single comma
+    m = line.match(/^(.+?),\s*(.+)$/);
+    if (m) return { title: m[1].trim(), artist: m[2].trim() };
+    // Just a title
+    return { title: line, artist: '' };
+  }).filter(t => t.title);
+
+  try {
+    const result = db.prepare('INSERT INTO playlists (name, description) VALUES (?, ?)')
+      .run((name || 'Imported tracklist').slice(0, 200), 'Imported from tracklist');
+    const playlistId = Number(result.lastInsertRowid);
+    const added = await searchAndInsert(playlistId, tracks);
+    res.json({ playlistId, name: name || 'Imported tracklist', total: tracks.length, added });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
