@@ -74,6 +74,27 @@
 [data-theme="light"] .hover\:bg-neutral-800:hover { background-color: rgb(230, 230, 230) !important; }
 [data-theme="light"] .hover\:bg-neutral-800\/50:hover { background-color: rgba(0,0,0,0.05) !important; }
 
+/* ─── Force-dark scope ─────────────────────────────────────────────────── */
+/* Full-screen overlays (Visualizer, Karaoke, NowPlaying, MiniPlayer) opt
+   out of the light-theme overrides via the .force-dark class so they stay
+   readable on their dark backgrounds even when the global theme is light. */
+.force-dark .bg-black, .force-dark.bg-black { background-color: #000 !important; }
+.force-dark .bg-neutral-900, .force-dark.bg-neutral-900 { background-color: rgb(23, 23, 23) !important; }
+.force-dark .bg-neutral-800, .force-dark.bg-neutral-800 { background-color: rgb(38, 38, 38) !important; }
+.force-dark .bg-neutral-800\/40 { background-color: rgba(38, 38, 38, 0.4) !important; }
+.force-dark .bg-neutral-800\/50 { background-color: rgba(38, 38, 38, 0.5) !important; }
+.force-dark .bg-neutral-800\/60 { background-color: rgba(38, 38, 38, 0.6) !important; }
+.force-dark .bg-neutral-700 { background-color: rgb(64, 64, 64) !important; }
+.force-dark .text-white { color: #fff !important; }
+.force-dark .text-neutral-300 { color: rgb(212, 212, 212) !important; }
+.force-dark .text-neutral-400 { color: rgb(163, 163, 163) !important; }
+.force-dark .text-neutral-500 { color: rgb(115, 115, 115) !important; }
+.force-dark .border-neutral-700 { border-color: rgb(64, 64, 64) !important; }
+.force-dark .border-neutral-800 { border-color: rgb(38, 38, 38) !important; }
+.force-dark .hover\:bg-neutral-700:hover { background-color: rgb(64, 64, 64) !important; }
+.force-dark .hover\:bg-neutral-800:hover { background-color: rgb(38, 38, 38) !important; }
+.force-dark .hover\:bg-neutral-800\/50:hover { background-color: rgba(38, 38, 38, 0.5) !important; }
+
 /* ─── Density: scale track row padding ─── */
 [data-density="compact"] .px-3.py-2 { padding-top: var(--row-padding-y) !important; padding-bottom: var(--row-padding-y) !important; }
 [data-density="spacious"] .px-3.py-2 { padding-top: var(--row-padding-y) !important; padding-bottom: var(--row-padding-y) !important; }

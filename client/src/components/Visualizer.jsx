@@ -170,6 +170,14 @@ export default function Visualizer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleVisualizer]);
 
+  // Stop any in-flight recording when the visualizer unmounts so MediaRecorder + canvas stream don't leak
+  useEffect(() => () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      try { recorderRef.current.stop(); } catch {}
+    }
+    recorderRef.current = null;
+  }, []);
+
   // Resize canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -300,7 +308,7 @@ export default function Visualizer() {
 
   if (!currentTrack) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center text-white/40">
+      <div className="force-dark fixed inset-0 z-50 bg-black flex items-center justify-center text-white/40">
         <div className="text-center">
           <p className="text-lg mb-2">No track playing</p>
           <button onClick={toggleVisualizer} className="text-sm underline">Close</button>
@@ -314,7 +322,7 @@ export default function Visualizer() {
   const fmt = (s) => !s || isNaN(s) ? '0:00' : `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black overflow-hidden">
+    <div className="force-dark fixed inset-0 z-50 bg-black overflow-hidden">
       {/* Blurred album art backdrop (for non-image-heavy modes) */}
       {currentTrack?.thumbnail && !['vinyl', 'kaleidoscope'].includes(mode) && (
         <img src={upgradeThumbnail(currentTrack.thumbnail, 720)} referrerPolicy="no-referrer" alt=""

@@ -72,7 +72,7 @@ export default function NowPlaying() {
   const upNext = queue.slice(queueIndex + 1, queueIndex + 4);
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col text-white" style={{ background: bg }}>
+    <div className="force-dark fixed inset-0 z-40 flex flex-col text-white" style={{ background: bg }}>
       {/* Header */}
       <div className="flex items-center justify-between p-6">
         <div>

@@ -11,7 +11,7 @@ export default function MiniPlayer() {
     : '#171717';
 
   return (
-    <div className="fixed inset-0 z-[100] text-white select-none flex flex-col" style={{ background: bg, WebkitAppRegion: 'drag' }}>
+    <div className="force-dark fixed inset-0 z-[100] text-white select-none flex flex-col" style={{ background: bg, WebkitAppRegion: 'drag' }}>
       <div className="flex-1 flex items-center gap-3 px-3 py-3 min-h-0">
         {currentTrack ? (
           <>

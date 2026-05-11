@@ -124,7 +124,7 @@ export default function Karaoke() {
     : 'radial-gradient(ellipse at top, #2a2a2a, #000 80%), #000';
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center text-white bg-black" style={{ background: bg }}>
+    <div className="force-dark fixed inset-0 z-50 flex flex-col items-center justify-center text-white bg-black" style={{ background: bg }}>
       <button onClick={toggleKaraoke}
         className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/10 z-10" title="Exit karaoke (Esc)">
         <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>

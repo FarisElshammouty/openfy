@@ -96,6 +96,9 @@ export function PlayerProvider({ children }) {
   const recordedRef = useRef(false); // recorded play to history (>=30s threshold)
   const stuckTimerRef = useRef(null);
   const stuckCheckRef = useRef({ lastProgress: 0, stuckSince: 0 });
+  // Latest-callbacks ref so keyboard / media-session handlers always see fresh
+  // versions of functions whose deps change (e.g. toggleQueue depends on showQueue).
+  const handlersRef = useRef({});
 
   const sr = useRef({ queue: [], shuffle: false, repeat: 'off' });
   sr.current = { queue, shuffle, repeat };
@@ -110,6 +113,12 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     api.getLiked().then(t => setLikedIds(new Set(t.map(x => x.videoId)))).catch(() => {});
     api.getPlaylists().then(setPlaylists).catch(() => {});
+    // Cleanup on unmount: kill any pending sleep timer + close AudioContext
+    return () => {
+      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+      if (stuckTimerRef.current) clearInterval(stuckTimerRef.current);
+      try { audioCtxRef.current?.close?.(); } catch {}
+    };
   }, []);
 
   // Audio event listeners
@@ -135,9 +144,10 @@ export function PlayerProvider({ children }) {
     const a = audioRef.current;
     const onEnd = () => {
       if (crossfadeStartedRef.current) { crossfadeStartedRef.current = false; return; }
-      // Sleep timer end-of-track mode
+      // Sleep timer end-of-track mode — keep audio paused and update UI state
       if (sleepTimer?.mode === 'end-of-track') {
         setSleepTimer(null);
+        setIsPlaying(false);
         return;
       }
       const { queue: q, shuffle: s, repeat: r } = sr.current;
@@ -344,13 +354,13 @@ export function PlayerProvider({ children }) {
     }
   }, [audioOutputDeviceId]);
 
-  // Media Session handlers + position state
+  // Media Session handlers + position state — read latest fns from ref
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.setActionHandler('play', () => audioRef.current.play());
     navigator.mediaSession.setActionHandler('pause', () => audioRef.current.pause());
-    navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
-    navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+    navigator.mediaSession.setActionHandler('previoustrack', () => handlersRef.current.playPrev?.());
+    navigator.mediaSession.setActionHandler('nexttrack', () => handlersRef.current.playNext?.());
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (details.seekTime != null) { audioRef.current.currentTime = details.seekTime; setProgress(details.seekTime); }
     });
@@ -392,20 +402,21 @@ export function PlayerProvider({ children }) {
     if (a) { a.addEventListener('seeked', sendPresence); return () => a.removeEventListener('seeked', sendPresence); }
   }, [currentTrack, isPlaying]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — call latest fns through handlersRef to avoid stale closures
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const a = audioRef.current;
+      const h = handlersRef.current;
       if (e.code === 'Space' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         a.paused ? a.play().catch(() => {}) : a.pause();
       } else if (e.code === 'ArrowRight' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        playNext();
+        h.playNext?.();
       } else if (e.code === 'ArrowLeft' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        playPrev();
+        h.playPrev?.();
       } else if (e.code === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         a.currentTime = Math.min((a.duration || 0), a.currentTime + 5);
@@ -414,30 +425,32 @@ export function PlayerProvider({ children }) {
         a.currentTime = Math.max(0, a.currentTime - 5);
       } else if (e.code === 'ArrowUp' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        setVolume(v => Math.min(1, v + 0.05));
+        setVol(v => Math.min(1, v + 0.05));
       } else if (e.code === 'ArrowDown' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        setVolume(v => Math.max(0, v - 0.05));
+        setVol(v => Math.max(0, v - 0.05));
       } else if (e.code === 'KeyQ' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        toggleQueue();
+        h.toggleQueue?.();
       } else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        toggleLyrics();
+        h.toggleLyrics?.();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Electron IPC
+  // Electron IPC — call latest fns through handlersRef
   useEffect(() => {
     if (!window.electronAPI) return;
     window.electronAPI.onMediaControl((action) => {
+      const a = audioRef.current;
+      const h = handlersRef.current;
       switch (action) {
-        case 'play-pause': audioRef.current.paused ? audioRef.current.play().catch(() => {}) : audioRef.current.pause(); break;
-        case 'next': playNext(); break;
-        case 'prev': playPrev(); break;
+        case 'play-pause': a.paused ? a.play().catch(() => {}) : a.pause(); break;
+        case 'next': h.playNext?.(); break;
+        case 'prev': h.playPrev?.(); break;
       }
     });
   }, []);
@@ -507,6 +520,17 @@ export function PlayerProvider({ children }) {
     const a = audioRef.current;
     a.pause();
     try { a.removeAttribute('src'); a.load(); } catch {}
+    // Also stop any in-flight crossfade audio
+    if (fadeOutRef.current) {
+      clearInterval(fadeOutRef.current.timer);
+      try {
+        fadeOutRef.current.audio.pause();
+        fadeOutRef.current.audio.removeAttribute('src');
+        fadeOutRef.current.audio.load();
+      } catch {}
+      fadeOutRef.current = null;
+    }
+    crossfadeStartedRef.current = false;
     setQueue([]); setQueueIndex(-1); setProgress(0); setDuration(0);
   }, []);
   const toggleShuffle = useCallback(() => setShuffle(p => !p), []);
@@ -634,12 +658,31 @@ export function PlayerProvider({ children }) {
 
   const refreshPlaylists = useCallback(async () => { setPlaylists(await api.getPlaylists()); }, []);
 
+  // Keep handlersRef in sync with the latest callbacks for keyboard / media-session / IPC
+  handlersRef.current = { playNext, playPrev, toggleQueue, toggleLyrics };
+
   // Shared lyrics cache so Lyrics/NowPlaying/Karaoke don't all re-fetch
+  const LYRICS_CACHE_MAX = 50;
+  const cacheSet = (cache, key, value) => {
+    // LRU-ish: delete then set so the entry becomes most recent
+    cache.delete(key);
+    cache.set(key, value);
+    while (cache.size > LYRICS_CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      cache.delete(oldest);
+    }
+  };
   const getLyricsCached = useCallback(async (track) => {
     if (!track) return { syncedLyrics: null, plainLyrics: null };
     const cache = lyricsCacheRef.current;
     const cacheKey = `${track.videoId}:${lyricsTranslate || 'orig'}`;
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    if (cache.has(cacheKey)) {
+      // Touch for LRU
+      const v = cache.get(cacheKey);
+      cache.delete(cacheKey);
+      cache.set(cacheKey, v);
+      return v;
+    }
 
     const baseKey = `${track.videoId}:orig`;
     let data;
@@ -647,7 +690,7 @@ export function PlayerProvider({ children }) {
       data = cache.get(baseKey);
     } else {
       data = await api.getLyrics(track.title, track.artist);
-      cache.set(baseKey, data);
+      cacheSet(cache, baseKey, data);
     }
 
     if (!lyricsTranslate || (!data.syncedLyrics && !data.plainLyrics)) {
@@ -679,7 +722,7 @@ export function PlayerProvider({ children }) {
       }
 
       const result = { syncedLyrics: translatedSynced, plainLyrics: translatedPlain };
-      cache.set(cacheKey, result);
+      cacheSet(cache, cacheKey, result);
       return result;
     } catch {
       return data;

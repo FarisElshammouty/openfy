@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 const ACCENTS = [
@@ -43,7 +43,7 @@ export default function Settings() {
 
   const [audioDevices, setAudioDevices] = useState([]);
   const [dragOverSection, setDragOverSection] = useState(null);
-  const dragSrcRef = { current: null };
+  const dragSrcRef = useRef(null);
 
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
