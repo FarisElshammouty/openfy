@@ -18,6 +18,7 @@ import MiniPlayer from './components/MiniPlayer';
 import Stats from './components/Stats';
 import Settings from './components/Settings';
 import SmartPlaylist from './components/SmartPlaylist';
+import Welcome from './components/Welcome';
 
 function NavControls() {
   const navigate = useNavigate();
@@ -75,6 +76,7 @@ function MainLayout() {
       {showKaraoke && <Karaoke />}
       {showVisualizer && <Visualizer />}
       {showSettings && <Settings />}
+      <Welcome />
     </div>
   );
 }

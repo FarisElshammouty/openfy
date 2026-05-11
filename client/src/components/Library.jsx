@@ -81,9 +81,27 @@ export default function Library() {
         </div>
 
         {loading ? (
-          <div className="text-neutral-500 py-4 text-center">Loading...</div>
+          <div className="space-y-2 pt-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-2 py-2 animate-pulse">
+                <div className="w-10 h-10 rounded bg-neutral-800/60" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-neutral-800/60 rounded w-1/2" />
+                  <div className="h-2.5 bg-neutral-800/40 rounded w-1/3" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : likedTracks.length === 0 ? (
-          <div className="text-neutral-500 py-4 text-center text-sm">Songs you like will appear here</div>
+          <div className="py-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-neutral-800/60 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7 text-neutral-500" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+              </svg>
+            </div>
+            <div className="text-neutral-300 text-sm font-semibold">No liked songs yet</div>
+            <div className="text-neutral-500 text-xs mt-1">Tap the heart on any track to save it here.</div>
+          </div>
         ) : (
           <div className="space-y-0.5">
             {likedTracks.map((t, i) => (
@@ -113,7 +131,7 @@ export default function Library() {
             onCancel={() => setShowSmartBuilder(false)}
           />
         )}
-        {smartPlaylists.length > 0 && (
+        {smartPlaylists.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
             {smartPlaylists.map(sp => (
               <button key={sp.id} onClick={() => navigate(`/smart-playlist/${sp.id}`)}
@@ -128,6 +146,8 @@ export default function Library() {
               </button>
             ))}
           </div>
+        ) : !showSmartBuilder && (
+          <div className="text-neutral-500 text-sm py-2">Auto-updating playlists based on your listening — recently played, most played, never played, etc.</div>
         )}
       </section>
 

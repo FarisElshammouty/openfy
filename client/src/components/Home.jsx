@@ -4,8 +4,9 @@ import { api } from '../api';
 import { usePlayer } from '../context/PlayerContext';
 import TrackRow from './TrackRow';
 
+const CURRENT_YEAR = new Date().getFullYear();
 const GENRES = [
-  { name: 'Pop Hits', q: 'pop hits 2025', from: 'from-rose-600', to: 'to-rose-900' },
+  { name: 'Pop Hits', q: `pop hits ${CURRENT_YEAR}`, from: 'from-rose-600', to: 'to-rose-900' },
   { name: 'Hip Hop', q: 'hip hop hits', from: 'from-orange-600', to: 'to-orange-900' },
   { name: 'Rock', q: 'rock hits', from: 'from-red-700', to: 'to-red-950' },
   { name: 'Electronic', q: 'electronic dance music', from: 'from-cyan-600', to: 'to-cyan-900' },
@@ -99,9 +100,19 @@ export default function Home() {
       <section key="trending" className="mb-8">
         <h2 className="text-xl font-bold mb-4">Trending now</h2>
         {loading ? (
-          <div className="text-neutral-500 py-8 text-center">Loading trending music...</div>
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-2 py-2 animate-pulse">
+                <div className="w-10 h-10 rounded bg-neutral-800/60" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-neutral-800/60 rounded w-1/2" />
+                  <div className="h-2.5 bg-neutral-800/40 rounded w-1/3" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : trending.length === 0 ? (
-          <div className="text-neutral-500 py-8 text-center">Could not load trending. Try searching for songs instead.</div>
+          <div className="text-neutral-500 py-8 text-center text-sm">Could not load trending. Try searching for songs instead.</div>
         ) : (
           <div className="space-y-0.5">
             {trending.slice(0, 20).map((t, i) => (

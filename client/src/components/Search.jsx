@@ -129,10 +129,30 @@ export default function Search() {
         </div>
       )}
 
-      {loading && <div className="text-neutral-500 py-12 text-center">Searching...</div>}
+      {loading && (
+        <div className="space-y-2 mt-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-2 py-2 animate-pulse">
+              <div className="w-10 h-10 rounded bg-neutral-800/60" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 bg-neutral-800/60 rounded w-1/2" />
+                <div className="h-2.5 bg-neutral-800/40 rounded w-1/3" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!loading && !query && recents.length === 0 && (
-        <div className="text-neutral-500 py-20 text-center text-lg">Search for songs, artists, or albums</div>
+        <div className="py-20 text-center">
+          <div className="w-16 h-16 rounded-full bg-neutral-800/60 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-neutral-500" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 5L20.49 19l-5-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+            </svg>
+          </div>
+          <div className="text-neutral-300 text-lg font-semibold mb-1">Find your next favorite song</div>
+          <div className="text-neutral-500 text-sm">Search for songs, artists, or albums</div>
+        </div>
       )}
 
       {!loading && !query && recents.length > 0 && (
@@ -153,7 +173,15 @@ export default function Search() {
       )}
 
       {!loading && query && !hasResults && (
-        <div className="text-neutral-500 py-20 text-center">No results found for &ldquo;{query}&rdquo;</div>
+        <div className="py-20 text-center">
+          <div className="w-16 h-16 rounded-full bg-neutral-800/60 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-neutral-500" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.5 9C10.12 9 9 10.12 9 11.5S10.12 14 11.5 14 14 12.88 14 11.5 12.88 9 11.5 9zm0 7c-2.48 0-4.5-2.02-4.5-4.5S9.02 7 11.5 7 16 9.02 16 11.5 13.98 16 11.5 16zm9-4h-1v-1c0-.55-.45-1-1-1s-1 .45-1 1v1h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v1c0 .55.45 1 1 1s1-.45 1-1v-1h1c.55 0 1-.45 1-1s-.45-1-1-1z" />
+            </svg>
+          </div>
+          <div className="text-neutral-300 text-lg font-semibold mb-1">No results for &ldquo;{query}&rdquo;</div>
+          <div className="text-neutral-500 text-sm">Check your spelling or try different keywords.</div>
+        </div>
       )}
 
       {!loading && tab === 'songs' && hasResults && (

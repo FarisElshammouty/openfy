@@ -46,7 +46,29 @@ let deepLinkUrl = null;
 let isQuitting = false;
 let currentTrackInfo = null;
 
+function resolveIconPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'assets', 'icon.png'),
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(process.resourcesPath || '', 'assets', 'icon.png')
+  ];
+  for (const p of candidates) {
+    try { if (p && fs.existsSync(p)) return p; } catch {}
+  }
+  return null;
+}
+
 function createTrayIcon() {
+  const iconPath = resolveIconPath();
+  if (iconPath) {
+    try {
+      const img = nativeImage.createFromPath(iconPath);
+      if (!img.isEmpty()) return img.resize({ width: 16, height: 16 });
+    } catch (err) {
+      log(`Tray icon load failed: ${err.message}`);
+    }
+  }
+  // Fallback: procedural green disc
   const size = 16;
   const canvas = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y++) {
@@ -93,6 +115,7 @@ function updateTrayMenu() {
 }
 
 function createWindow() {
+  const iconPath = resolveIconPath();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -101,6 +124,7 @@ function createWindow() {
     backgroundColor: '#0a0a0a',
     title: 'Openfy',
     autoHideMenuBar: true,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

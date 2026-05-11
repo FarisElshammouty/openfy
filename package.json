@@ -30,7 +30,8 @@
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "jimp": "^1.6.1"
   },
   "build": {
     "appId": "com.openfy.app",
@@ -43,13 +44,20 @@
       "electron/**/*",
       "server/**/*",
       "client/dist/**/*",
+      "assets/icon.png",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "assets/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
     ],
     "win": {
+      "icon": "assets/icon.png",
       "target": [
         {
           "target": "nsis",

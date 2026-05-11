@@ -11,3 +11,5 @@ client/dist/
 *-player-script.js
 build/
 music/
+build.log
+/image-*.png

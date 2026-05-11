@@ -9,10 +9,12 @@ export default function Sidebar() {
   const location = useLocation();
   const [showLinks, setShowLinks] = useState(false);
   const [savedAlbums, setSavedAlbums] = useState([]);
+  const [smartPlaylists, setSmartPlaylists] = useState([]);
 
-  // Reload saved albums whenever route changes (e.g. after saving on AlbumView)
+  // Reload saved albums + smart playlists whenever route changes
   useEffect(() => {
     api.getSavedAlbums().then(setSavedAlbums).catch(() => {});
+    api.getSmartPlaylists().then(setSmartPlaylists).catch(() => {});
   }, [location.pathname]);
 
   const create = async () => {
@@ -76,6 +78,19 @@ export default function Sidebar() {
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">{p.name}</div>
                 <div className="text-xs text-neutral-500 truncate">Playlist{p.track_count ? ` · ${p.track_count} songs` : ''}</div>
+              </div>
+            </NavLink>
+          ))}
+
+          {smartPlaylists.map(sp => (
+            <NavLink key={`smart-${sp.id}`} to={`/smart-playlist/${sp.id}`} className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${isActive ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-white'}`}>
+              <div className="w-10 h-10 rounded bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3v2h14V3H5zm0 4v2h14V7H5zm0 4v10l7-3.5L19 21V11H5z"/></svg>
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">{sp.name}</div>
+                <div className="text-xs text-neutral-500 truncate">Smart playlist</div>
               </div>
             </NavLink>
           ))}
