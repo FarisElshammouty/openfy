@@ -68,6 +68,7 @@ export function PlayerProvider({ children }) {
   const [showVisualizer, setShowVisualizer] = useState(false);
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
+  const streamDestRef = useRef(null);
   const [queue, setQueue] = useState(lastTrack ? [lastTrack] : []);
   const [queueIndex, setQueueIndex] = useState(lastTrack ? 0 : -1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -555,18 +556,28 @@ export function PlayerProvider({ children }) {
     }
   }, []);
 
+  // Get a MediaStream from the analyser node (for recording the visualizer with audio)
+  const getAnalyserStream = useCallback(() => {
+    const analyser = getAnalyser();
+    if (!analyser || !audioCtxRef.current) return null;
+    if (!streamDestRef.current) {
+      streamDestRef.current = audioCtxRef.current.createMediaStreamDestination();
+      analyser.connect(streamDestRef.current);
+    }
+    return streamDestRef.current.stream;
+  }, [getAnalyser]);
+
   const toggleVisualizer = useCallback(() => {
     setShowVisualizer(p => {
       const next = !p;
       if (next) {
-        // Initialize analyser. If audio was playing, briefly pause+play to force
-        // the AudioContext routing to take effect (otherwise the first session
-        // shows zero data until user toggles play).
-        const wasPlaying = !audioRef.current.paused;
         getAnalyser();
-        if (wasPlaying) {
-          audioRef.current.pause();
-          setTimeout(() => audioRef.current.play().catch(() => {}), 30);
+        // If audio was playing, re-prime the routing graph synchronously so
+        // analyser data flows on first open (Chromium quirk).
+        const audio = audioRef.current;
+        if (!audio.paused) {
+          audio.pause();
+          audio.play().catch(() => {});
         }
         setShowNowPlaying(false);
         setShowKaraoke(false);
@@ -685,7 +696,7 @@ export function PlayerProvider({ children }) {
       homeLayout, setHomeLayout, crossfadeDuration, setCrossfadeDuration,
       audioOutputDeviceId, setAudioOutputDeviceId, lyricsTranslate, setLyricsTranslate,
       showSettings, toggleSettings,
-      showVisualizer, toggleVisualizer, getAnalyser,
+      showVisualizer, toggleVisualizer, getAnalyser, getAnalyserStream,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
       toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
