@@ -227,7 +227,7 @@ export function PlayerProvider({ children }) {
       fadeOutRef.current = null;
     }
 
-    const newSrc = api.streamUrl(currentTrack);
+    const newSrc = api.streamUrl(currentTrack.videoId);
     // Capture the OLD audio src for the fade-out clone (before we reassign `a.src`)
     const oldSrc = a.src;
     const shouldCrossfade = crossfadeRef.current && prev && prev !== currentTrack.videoId && !a.paused && oldSrc;

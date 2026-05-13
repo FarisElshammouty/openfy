@@ -72,50 +72,35 @@ async function getYtClient() {
 }
 
 const audioUrlCache = new Map();
-// videoId → alternate working videoId (when the original is UNPLAYABLE)
-const alternateIdCache = new Map();
+// videoId → canonical working videoId (when the original is UNPLAYABLE)
+const canonicalIdCache = new Map();
 
-// Strip parenthetical/bracketed annotations and trailing "feat." from search terms
-function cleanForSearch(s) {
-  return (s || '')
-    .replace(/\s*\(.*?\)\s*/g, ' ')
-    .replace(/\s*\[.*?\]\s*/g, ' ')
-    .replace(/\s*\|.*$/, '')
-    .replace(/\s*-\s*(from|original|official).*$/i, '')
-    .replace(/\s*ft\..*$/i, '')
-    .replace(/\s*feat\..*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-async function findAlternateVideoId(originalId, title, artist) {
-  if (!title) return null;
-  const cached = alternateIdCache.get(originalId);
-  if (cached) return cached;
-  const q = `${cleanForSearch(title)} ${cleanForSearch(artist || '')}`.trim();
-  if (!q) return null;
+// When a YouTube Music videoId is dead (deleted / replaced by a new upload),
+// the watch page still serves HTML containing a <link rel="canonical"> tag
+// pointing to the current videoId for the same track. Resolving the redirect
+// is a single HTTP request and avoids the fuzzy-match risk of a title search.
+async function resolveCanonicalVideoId(originalId) {
+  if (!originalId) return null;
+  const cached = canonicalIdCache.get(originalId);
+  if (cached !== undefined) return cached; // may be null (no canonical found)
   try {
-    const data = await piped(`/search?q=${encodeURIComponent(q)}&filter=music_songs`);
-    // Try up to 5 candidates, skipping the broken original
-    for (const item of (data.items || []).slice(0, 5)) {
-      const id = vid(item.url);
-      if (!id || id === originalId) continue;
-      // Quick playability check via Piped — if it has audioStreams, it's playable
-      try {
-        const r = await fetch(`${activeInstance}/streams/${id}`, {
-          headers: { 'User-Agent': 'Openfy/1.0' },
-          signal: AbortSignal.timeout(8000)
-        });
-        if (!r.ok) continue;
-        const sd = await r.json();
-        if ((sd.audioStreams || []).length > 0) {
-          alternateIdCache.set(originalId, id);
-          return id;
-        }
-      } catch {}
-    }
-  } catch {}
-  return null;
+    const r = await fetch(`https://music.youtube.com/watch?v=${originalId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) { canonicalIdCache.set(originalId, null); return null; }
+    const html = await r.text();
+    const m = html.match(/<link\s+rel="canonical"\s+href="https?:\/\/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/i);
+    const canonical = m && m[1] !== originalId ? m[1] : null;
+    canonicalIdCache.set(originalId, canonical);
+    return canonical;
+  } catch {
+    canonicalIdCache.set(originalId, null);
+    return null;
+  }
 }
 
 async function resolveViaPiped(videoId) {
@@ -852,38 +837,33 @@ async function streamVideoId(req, res, videoId) {
 
 app.get('/api/stream/:videoId', async (req, res) => {
   const videoId = req.params.videoId;
-  const { title, artist } = req.query;
 
-  // If we've previously resolved this dead videoId to a working alternate, use it.
-  const knownAlt = alternateIdCache.get(videoId);
-  if (knownAlt) {
-    if (await streamVideoId(req, res, knownAlt)) return;
+  // If we've already resolved this videoId to a canonical replacement, use it.
+  const known = canonicalIdCache.get(videoId);
+  if (known) {
+    if (await streamVideoId(req, res, known)) return;
   }
 
-  // Try the requested videoId
+  // Try the requested videoId first
   if (await streamVideoId(req, res, videoId)) return;
 
-  // Original failed. Try to find an alternate upload by title + artist.
-  if (title) {
-    const altId = await findAlternateVideoId(videoId, title, artist);
-    if (altId) {
-      console.log(`[stream] ${videoId} unplayable, retrying via alternate ${altId} (${title})`);
-      if (await streamVideoId(req, res, altId)) return;
-    }
+  // Original failed — check if YouTube Music has a canonical (redirect) target
+  const canonical = await resolveCanonicalVideoId(videoId);
+  if (canonical) {
+    console.log(`[stream] ${videoId} unplayable, following canonical redirect to ${canonical}`);
+    if (await streamVideoId(req, res, canonical)) return;
   }
 
   if (!res.headersSent) res.status(502).json({ error: 'Stream unavailable', code: 'STREAM_UNAVAILABLE' });
 });
 
-// Explicit alternate-lookup endpoint (so the client can persist the replacement
-// videoId back into its local DB instead of re-searching on every play).
+// Explicit canonical-lookup endpoint so the client can persist the replacement
+// videoId back into its local DB and avoid the redirect cost on every play.
 app.get('/api/resolve-alternate/:videoId', async (req, res) => {
   const { videoId } = req.params;
-  const { title, artist } = req.query;
-  if (!title) return res.status(400).json({ error: 'title required' });
-  const alt = await findAlternateVideoId(videoId, title, artist);
-  if (alt) return res.json({ videoId: alt });
-  res.status(404).json({ error: 'No working alternate found' });
+  const canonical = await resolveCanonicalVideoId(videoId);
+  if (canonical) return res.json({ videoId: canonical });
+  res.status(404).json({ error: 'No canonical replacement found' });
 });
 
 // Explicit alternate-lookup endpoint (client can pre-resolve to update its
