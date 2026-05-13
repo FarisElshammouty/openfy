@@ -132,11 +132,31 @@ export function PlayerProvider({ children }) {
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
+    const onError = () => {
+      // Audio element MediaError — stream unavailable, decode failed, etc.
+      // Auto-skip to the next track so a single bad video doesn't hang the player.
+      const err = a.error;
+      console.warn('[Openfy] audio error', err?.code, err?.message, 'src:', a.src?.slice(-60));
+      setIsPlaying(false);
+      // Defer the skip slightly so React state from the failed track settles first.
+      setTimeout(() => {
+        const { queue: q, repeat: r } = sr.current;
+        if (!q || q.length <= 1) return;
+        setQueueIndex(p => { const n = p + 1; return n >= q.length ? (r === 'all' ? 0 : p) : n; });
+      }, 200);
+    };
     a.addEventListener('timeupdate', onTime);
     a.addEventListener('durationchange', onDur);
     a.addEventListener('play', onPlay);
     a.addEventListener('pause', onPause);
-    return () => { a.removeEventListener('timeupdate', onTime); a.removeEventListener('durationchange', onDur); a.removeEventListener('play', onPlay); a.removeEventListener('pause', onPause); };
+    a.addEventListener('error', onError);
+    return () => {
+      a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('durationchange', onDur);
+      a.removeEventListener('play', onPlay);
+      a.removeEventListener('pause', onPause);
+      a.removeEventListener('error', onError);
+    };
   }, []);
 
   // Track ended handler
@@ -207,7 +227,7 @@ export function PlayerProvider({ children }) {
       fadeOutRef.current = null;
     }
 
-    const newSrc = api.streamUrl(currentTrack.videoId);
+    const newSrc = api.streamUrl(currentTrack);
     // Capture the OLD audio src for the fade-out clone (before we reassign `a.src`)
     const oldSrc = a.src;
     const shouldCrossfade = crossfadeRef.current && prev && prev !== currentTrack.videoId && !a.paused && oldSrc;

@@ -67,7 +67,21 @@ export const api = {
     body: JSON.stringify(track)
   }).catch(() => {}),
 
-  streamUrl: (videoId) => `${API}/stream/${videoId}`,
+  streamUrl: (videoIdOrTrack) => {
+    if (typeof videoIdOrTrack === 'string') return `${API}/stream/${videoIdOrTrack}`;
+    const { videoId, title, artist } = videoIdOrTrack || {};
+    const qs = new URLSearchParams();
+    if (title) qs.set('title', title);
+    if (artist) qs.set('artist', artist);
+    const q = qs.toString();
+    return `${API}/stream/${videoId}${q ? '?' + q : ''}`;
+  },
+  resolveAlternate: (videoId, title, artist) => {
+    const qs = new URLSearchParams();
+    if (title) qs.set('title', title);
+    if (artist) qs.set('artist', artist);
+    return request(`/resolve-alternate/${videoId}?${qs}`);
+  },
 
   updateDiscordPresence: (data) =>
     fetch(`${API}/discord/presence`, {

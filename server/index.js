@@ -72,6 +72,51 @@ async function getYtClient() {
 }
 
 const audioUrlCache = new Map();
+// videoId → alternate working videoId (when the original is UNPLAYABLE)
+const alternateIdCache = new Map();
+
+// Strip parenthetical/bracketed annotations and trailing "feat." from search terms
+function cleanForSearch(s) {
+  return (s || '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .replace(/\s*\[.*?\]\s*/g, ' ')
+    .replace(/\s*\|.*$/, '')
+    .replace(/\s*-\s*(from|original|official).*$/i, '')
+    .replace(/\s*ft\..*$/i, '')
+    .replace(/\s*feat\..*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function findAlternateVideoId(originalId, title, artist) {
+  if (!title) return null;
+  const cached = alternateIdCache.get(originalId);
+  if (cached) return cached;
+  const q = `${cleanForSearch(title)} ${cleanForSearch(artist || '')}`.trim();
+  if (!q) return null;
+  try {
+    const data = await piped(`/search?q=${encodeURIComponent(q)}&filter=music_songs`);
+    // Try up to 5 candidates, skipping the broken original
+    for (const item of (data.items || []).slice(0, 5)) {
+      const id = vid(item.url);
+      if (!id || id === originalId) continue;
+      // Quick playability check via Piped — if it has audioStreams, it's playable
+      try {
+        const r = await fetch(`${activeInstance}/streams/${id}`, {
+          headers: { 'User-Agent': 'Openfy/1.0' },
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!r.ok) continue;
+        const sd = await r.json();
+        if ((sd.audioStreams || []).length > 0) {
+          alternateIdCache.set(originalId, id);
+          return id;
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
 
 async function resolveViaPiped(videoId) {
   const cached = audioUrlCache.get(videoId);
@@ -662,9 +707,7 @@ app.get('/api/stats', (_req, res) => {
 
 // ── Audio stream proxy ──────────────────────────────────────────────
 
-app.get('/api/stream/:videoId', async (req, res) => {
-  const videoId = req.params.videoId;
-
+async function streamVideoId(req, res, videoId) {
   // Strategy 1: Piped proxied stream (Piped instances proxy through their own servers)
   try {
     const audio = await resolveViaPiped(videoId);
@@ -690,7 +733,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
         const ns = Readable.fromWeb(upstream.body);
         ns.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
         ns.pipe(res);
-        return;
+        return true;
       }
       audioUrlCache.delete(videoId);
     }
@@ -740,7 +783,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
       const nodeStream = Readable.fromWeb(remaining);
       nodeStream.on('error', () => res.destroy());
       nodeStream.pipe(res);
-      return;
+      return true;
     } catch (err) {
       if (attempt === 0) {
         ytClient = null;
@@ -801,10 +844,57 @@ app.get('/api/stream/:videoId', async (req, res) => {
       } catch {}
     }
     res.end();
-    return;
-  } catch (err) {
-    if (!res.headersSent) res.status(502).json({ error: err.message });
+    return true;
+  } catch {}
+  // All strategies failed. Caller decides what to do (e.g. alternate retry).
+  return false;
+}
+
+app.get('/api/stream/:videoId', async (req, res) => {
+  const videoId = req.params.videoId;
+  const { title, artist } = req.query;
+
+  // If we've previously resolved this dead videoId to a working alternate, use it.
+  const knownAlt = alternateIdCache.get(videoId);
+  if (knownAlt) {
+    if (await streamVideoId(req, res, knownAlt)) return;
   }
+
+  // Try the requested videoId
+  if (await streamVideoId(req, res, videoId)) return;
+
+  // Original failed. Try to find an alternate upload by title + artist.
+  if (title) {
+    const altId = await findAlternateVideoId(videoId, title, artist);
+    if (altId) {
+      console.log(`[stream] ${videoId} unplayable, retrying via alternate ${altId} (${title})`);
+      if (await streamVideoId(req, res, altId)) return;
+    }
+  }
+
+  if (!res.headersSent) res.status(502).json({ error: 'Stream unavailable', code: 'STREAM_UNAVAILABLE' });
+});
+
+// Explicit alternate-lookup endpoint (so the client can persist the replacement
+// videoId back into its local DB instead of re-searching on every play).
+app.get('/api/resolve-alternate/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const { title, artist } = req.query;
+  if (!title) return res.status(400).json({ error: 'title required' });
+  const alt = await findAlternateVideoId(videoId, title, artist);
+  if (alt) return res.json({ videoId: alt });
+  res.status(404).json({ error: 'No working alternate found' });
+});
+
+// Explicit alternate-lookup endpoint (client can pre-resolve to update its
+// state and avoid re-paying the search cost on every play).
+app.get('/api/resolve-alternate/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const { title, artist } = req.query;
+  if (!title) return res.status(400).json({ error: 'title required' });
+  const alt = await findAlternateVideoId(videoId, title, artist);
+  if (alt) return res.json({ videoId: alt });
+  res.status(404).json({ error: 'No working alternate found' });
 });
 
 // ── Image proxy (for color extraction with CORS) ────────────────────
