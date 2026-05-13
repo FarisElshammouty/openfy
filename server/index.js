@@ -72,17 +72,23 @@ async function getYtClient() {
 }
 
 const audioUrlCache = new Map();
-// videoId → canonical working videoId (when the original is UNPLAYABLE)
+// videoId → canonical working videoId (when the original is UNPLAYABLE).
+// Holds either a string (resolved) or null (looked up, no canonical found).
 const canonicalIdCache = new Map();
 
 // When a YouTube Music videoId is dead (deleted / replaced by a new upload),
 // the watch page still serves HTML containing a <link rel="canonical"> tag
 // pointing to the current videoId for the same track. Resolving the redirect
 // is a single HTTP request and avoids the fuzzy-match risk of a title search.
-async function resolveCanonicalVideoId(originalId) {
+//
+// `forceFresh` skips the in-memory cache — used when a previously-cached
+// canonical itself dies (i.e. the chain has advanced again: A → B → C).
+async function resolveCanonicalVideoId(originalId, { forceFresh = false } = {}) {
   if (!originalId) return null;
-  const cached = canonicalIdCache.get(originalId);
-  if (cached !== undefined) return cached; // may be null (no canonical found)
+  if (!forceFresh) {
+    const cached = canonicalIdCache.get(originalId);
+    if (cached !== undefined) return cached;
+  }
   try {
     const r = await fetch(`https://music.youtube.com/watch?v=${originalId}`, {
       headers: {
@@ -100,6 +106,57 @@ async function resolveCanonicalVideoId(originalId) {
   } catch {
     canonicalIdCache.set(originalId, null);
     return null;
+  }
+}
+
+// Rewrite all references to an old videoId in the local SQLite DB to a new
+// videoId. Handles the UNIQUE constraints (a playlist that already contains
+// the new ID, or liked/history rows that already exist for it) by merging
+// instead of failing — the duplicate old row is dropped.
+function migrateVideoIdInDb(oldId, newId) {
+  if (!oldId || !newId || oldId === newId) return;
+  try {
+    db.transaction(() => {
+      // playlist_tracks: UNIQUE(playlist_id, video_id). For each playlist that
+      // has the old ID, only rename if the new ID isn't already in that playlist.
+      const dupes = db.prepare(`
+        SELECT old.playlist_id
+        FROM playlist_tracks old
+        JOIN playlist_tracks new ON new.playlist_id = old.playlist_id
+        WHERE old.video_id = ? AND new.video_id = ?
+      `).all(oldId, newId);
+      for (const { playlist_id } of dupes) {
+        db.prepare(`DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?`).run(playlist_id, oldId);
+      }
+      db.prepare(`UPDATE playlist_tracks SET video_id = ? WHERE video_id = ?`).run(newId, oldId);
+
+      // liked_tracks: video_id is PK. Skip rename if newId already liked.
+      const alreadyLiked = db.prepare(`SELECT 1 FROM liked_tracks WHERE video_id = ?`).get(newId);
+      if (alreadyLiked) {
+        db.prepare(`DELETE FROM liked_tracks WHERE video_id = ?`).run(oldId);
+      } else {
+        db.prepare(`UPDATE liked_tracks SET video_id = ? WHERE video_id = ?`).run(newId, oldId);
+      }
+
+      // play_history: video_id is PK. Merge play_count + listened_seconds.
+      const newHist = db.prepare(`SELECT * FROM play_history WHERE video_id = ?`).get(newId);
+      const oldHist = db.prepare(`SELECT * FROM play_history WHERE video_id = ?`).get(oldId);
+      if (oldHist && newHist) {
+        db.prepare(`
+          UPDATE play_history
+             SET play_count = play_count + ?,
+                 listened_seconds = listened_seconds + ?,
+                 last_played = CASE WHEN ? > last_played THEN ? ELSE last_played END
+           WHERE video_id = ?
+        `).run(oldHist.play_count, oldHist.listened_seconds, oldHist.last_played, oldHist.last_played, newId);
+        db.prepare(`DELETE FROM play_history WHERE video_id = ?`).run(oldId);
+      } else if (oldHist) {
+        db.prepare(`UPDATE play_history SET video_id = ? WHERE video_id = ?`).run(newId, oldId);
+      }
+    })();
+    console.log(`[migrate] videoId ${oldId} → ${newId} persisted to DB`);
+  } catch (err) {
+    console.warn(`[migrate] failed to migrate ${oldId} → ${newId}:`, err.message);
   }
 }
 
@@ -838,27 +895,37 @@ async function streamVideoId(req, res, videoId) {
 app.get('/api/stream/:videoId', async (req, res) => {
   const videoId = req.params.videoId;
 
-  // If we've already resolved this videoId to a canonical replacement, use it.
+  // Fast path: we already know this videoId redirects to a working canonical.
   const known = canonicalIdCache.get(videoId);
   if (known) {
     if (await streamVideoId(req, res, known)) return;
+    // The previously-cached canonical itself is now dead (the chain advanced
+    // again). Drop the stale cache entry and fall through to the original-
+    // then-fresh-canonical retry path below.
+    canonicalIdCache.delete(videoId);
   }
 
-  // Try the requested videoId first
+  // Try the requested videoId
   if (await streamVideoId(req, res, videoId)) return;
 
-  // Original failed — check if YouTube Music has a canonical (redirect) target
-  const canonical = await resolveCanonicalVideoId(videoId);
-  if (canonical) {
+  // Original failed — ask YouTube Music for the current canonical. forceFresh
+  // bypasses cache so we always get the latest mapping when chains advance.
+  const canonical = await resolveCanonicalVideoId(videoId, { forceFresh: true });
+  if (canonical && canonical !== known) {
     console.log(`[stream] ${videoId} unplayable, following canonical redirect to ${canonical}`);
-    if (await streamVideoId(req, res, canonical)) return;
+    if (await streamVideoId(req, res, canonical)) {
+      // Persist the rename to the user's DB so subsequent app launches skip
+      // the redirect lookup entirely. Fire-and-forget — never block the stream.
+      setImmediate(() => migrateVideoIdInDb(videoId, canonical));
+      return;
+    }
   }
 
   if (!res.headersSent) res.status(502).json({ error: 'Stream unavailable', code: 'STREAM_UNAVAILABLE' });
 });
 
-// Explicit canonical-lookup endpoint so the client can persist the replacement
-// videoId back into its local DB and avoid the redirect cost on every play.
+// Explicit canonical-lookup endpoint (used by future "clean up dead videos"
+// migration tooling; not on the hot path of normal playback).
 app.get('/api/resolve-alternate/:videoId', async (req, res) => {
   const { videoId } = req.params;
   const canonical = await resolveCanonicalVideoId(videoId);
