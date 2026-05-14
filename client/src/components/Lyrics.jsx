@@ -18,16 +18,17 @@ export default function Lyrics() {
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
+  const [source, setSource] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const containerRef = useRef(null);
   const activeLineRef = useRef(null);
 
   useEffect(() => {
     if (!currentTrack) { setSynced([]); setPlain(''); return; }
-    setSynced([]); setPlain(''); setNotFound(false); setUnavailable(false); setLoading(true);
+    setSynced([]); setPlain(''); setNotFound(false); setUnavailable(false); setSource(''); setLoading(true);
     getLyricsCached(currentTrack).then(data => {
-      if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
-      else if (data.plainLyrics) setPlain(data.plainLyrics);
+      if (data.syncedLyrics) { setSynced(parseLRC(data.syncedLyrics)); setSource(data.source || ''); }
+      else if (data.plainLyrics) { setPlain(data.plainLyrics); setSource(data.source || ''); }
       else if (data.unavailable) setUnavailable(true);
       else setNotFound(true);
     }).catch(() => setUnavailable(true)).finally(() => setLoading(false));
@@ -88,6 +89,10 @@ export default function Lyrics() {
           </div>
         )}
 
+        {!loading && source && (synced.length > 0 || plain) && (
+          <p className="text-[11px] text-neutral-600 text-center pb-6">Lyrics via {source}</p>
+        )}
+
         {!loading && notFound && (
           <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
             <svg className="w-12 h-12 mb-3 text-neutral-600" viewBox="0 0 24 24" fill="currentColor">
@@ -105,7 +110,7 @@ export default function Lyrics() {
               <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
             </svg>
             <p className="text-sm">Couldn't reach the lyrics service</p>
-            <p className="text-xs text-neutral-600 mt-1">LRCLIB may be down or rate-limiting</p>
+            <p className="text-xs text-neutral-600 mt-1">All lyrics sources are unreachable right now</p>
             <button onClick={() => setRetryKey(k => k + 1)}
               className="mt-4 px-4 py-1.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold transition-colors">
               Retry

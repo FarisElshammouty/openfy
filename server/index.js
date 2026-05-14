@@ -202,18 +202,89 @@ async function resolveViaPiped(videoId) {
   return null;
 }
 
-// ── Lyrics (LRCLIB) ────────────────────────────────────────────────
+// ── Lyrics: LRCLIB primary, NetEase + YouTube Music fallbacks ───────
+//
+// Each source function returns { syncedLyrics, plainLyrics } on a hit, null
+// on a clean "no match", and THROWS if the service itself is unreachable.
+// That lets the route tell "this track has no lyrics anywhere" apart from
+// "every lyrics service is down" (the latter shows a retry-able error).
 
-// One short-timeout attempt. Throws on a network failure / timeout (so the
-// caller can tell "LRCLIB is unreachable" apart from "LRCLIB answered, no
-// match"), returns parsed JSON on success, or null on a non-OK response.
-// Retrying a timed-out request just doubles the wait, so we don't.
-async function fetchLrclib(url) {
-  const r = await fetch(url, {
+// LRCLIB — community synced-lyrics DB. Best quality (timestamped LRC).
+async function lyricsFromLrclib(t, a) {
+  const params = new URLSearchParams({ track_name: t });
+  if (a) params.set('artist_name', a);
+  const r = await fetch(`https://lrclib.net/api/get?${params}`, {
     headers: { 'User-Agent': 'Openfy (https://github.com/FarisElshammouty/openfy)' },
     signal: AbortSignal.timeout(6000)
   });
-  return r.ok ? r.json() : null;
+  if (!r.ok) return null;
+  const data = await r.json();
+  if (data?.syncedLyrics || data?.plainLyrics)
+    return { syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null };
+  return null;
+}
+
+// NetEase Cloud Music — undocumented public API, large catalogue, and it
+// also carries synced LRC. Used only as a fallback. Its LRC often starts
+// with crediting lines ("作词 : ...", "Producer : ...") which we strip.
+const NETEASE_CREDIT = /^(作词|作詞|作曲|編曲|编曲|制作人|製作人|混音|母带|和声|和聲|录音|錄音|吉他|贝斯|鼓|键盘|监制|策划|出品|发行|Produced|Producer|Written|Writer|Composed|Composer|Arrange|Arranger|Mix|Mixed|Master|Mastered|Lyric|Lyrics|Lyricist|Recorded|Recording|Engineer|Vocals?|Guitar|Bass|Drums|Keyboard)s?\s*[:：]/i;
+function cleanNeteaseLrc(lrc) {
+  return lrc.split('\n')
+    .filter(line => {
+      const m = line.match(/^\[\d{1,2}:\d{2}[.:]\d{1,3}\]\s*(.*)$/);
+      if (!m) return false; // drop id tags and untimed lines
+      const text = m[1].trim();
+      return !text || !NETEASE_CREDIT.test(text);
+    })
+    .join('\n')
+    .trim();
+}
+async function lyricsFromNetease(t, a) {
+  const headers = { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://music.163.com' };
+  // A throw here = NetEase unreachable; propagate it.
+  const sr = await fetch(`https://music.163.com/api/search/get?s=${encodeURIComponent(`${t} ${a}`.trim())}&type=1&limit=5`, {
+    headers, signal: AbortSignal.timeout(6000)
+  });
+  if (!sr.ok) return null;
+  const sd = await sr.json().catch(() => null);
+  const song = (sd?.result?.songs || [])[0];
+  if (!song?.id) return null;
+  // NetEase answered, so from here a failure just means "no lyrics for it".
+  try {
+    const lr = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&tv=-1`, {
+      headers, signal: AbortSignal.timeout(6000)
+    });
+    if (!lr.ok) return null;
+    const ld = await lr.json();
+    const raw = (ld.lrc?.lyric || '').trim();
+    if (!raw) return null;
+    if (/\[\d{1,2}:\d{2}/.test(raw)) {
+      const cleaned = cleanNeteaseLrc(raw);
+      if (cleaned) return { syncedLyrics: cleaned, plainLyrics: null };
+    }
+    return { syncedLyrics: null, plainLyrics: raw };
+  } catch { return null; }
+}
+
+// YouTube Music — via the InnerTube client already used for streaming, so no
+// extra dependency. Plain text only (no timestamps).
+async function lyricsFromYtMusic(t, a) {
+  const withTimeout = (p, ms) =>
+    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+  const yt = await getYtClient();
+  // search throwing = YouTube Music unreachable; propagate it.
+  const search = await withTimeout(yt.music.search(`${t} ${a}`.trim(), { type: 'song' }), 7000);
+  const song = search?.songs?.contents?.[0] || search?.contents?.[0];
+  if (!song?.id) return null;
+  // YT Music answered — any failure past here is just "no lyrics for it".
+  try {
+    const info = await withTimeout(yt.music.getInfo(song.id), 7000);
+    const lyrics = await withTimeout(info.getLyrics(), 7000);
+    const text = lyrics?.description?.text
+      || (typeof lyrics?.description === 'string' ? lyrics.description : null);
+    if (text && text.trim()) return { syncedLyrics: null, plainLyrics: text.trim() };
+  } catch { /* no lyrics for this track */ }
+  return null;
 }
 
 app.get('/api/lyrics', async (req, res) => {
@@ -225,38 +296,34 @@ app.get('/api/lyrics', async (req, res) => {
     const clean = (s) => s.replace(/\s*\(.*?\)\s*/g, '').replace(/\s*\[.*?\]\s*/g, '')
       .replace(/\s*\|.*$/, '').replace(/\s*ft\..*$/i, '').replace(/\s*feat\..*$/i, '').trim();
     const cleanArtist = (s) => s.replace(/ - Topic$/, '').replace(/VEVO$/i, '').trim();
-
     const t = clean(title);
     const a = cleanArtist(artist || '');
 
-    const params = new URLSearchParams({ track_name: t });
-    if (a) params.set('artist_name', a);
-
-    // Precise lookup first. If it throws, LRCLIB is unreachable (down or
-    // rate-limiting this IP) — bail now rather than spending another 6s on a
-    // search that will also time out, and tell the client it was a service
-    // failure, not a genuine "no lyrics for this track".
-    let data;
+    // 1. LRCLIB first — synced, best quality.
+    let lrclibErrored = false;
     try {
-      data = await fetchLrclib(`https://lrclib.net/api/get?${params}`);
-    } catch {
-      return res.json({ ...empty, unavailable: true });
-    }
-    if (data?.syncedLyrics || data?.plainLyrics)
-      return res.json({ syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null });
+      const r = await lyricsFromLrclib(t, a);
+      if (r) return res.json({ ...r, source: 'LRCLIB' });
+    } catch { lrclibErrored = true; }
 
-    // /api/get answered but had no exact match — fall back to fuzzy search.
-    const q = `${t} ${a}`.trim();
-    let results = null;
-    try {
-      results = await fetchLrclib(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);
-    } catch { /* search timed out — treat as not found */ }
-    if (Array.isArray(results)) {
-      const best = results.find(x => x.syncedLyrics) || results[0];
-      if (best) return res.json({ syncedLyrics: best.syncedLyrics || null, plainLyrics: best.plainLyrics || null });
-    }
+    // 2. Fallbacks in parallel. Prefer NetEase (it carries timestamps);
+    //    YouTube Music is the plain-text last resort.
+    const [neteaseR, ytmR] = await Promise.allSettled([
+      lyricsFromNetease(t, a),
+      lyricsFromYtMusic(t, a)
+    ]);
+    if (neteaseR.status === 'fulfilled' && neteaseR.value)
+      return res.json({ ...neteaseR.value, source: 'NetEase' });
+    if (ytmR.status === 'fulfilled' && ytmR.value)
+      return res.json({ ...ytmR.value, source: 'YouTube Music' });
 
-    res.json(empty);
+    // Nothing found. Only report "unavailable" (retry-able) if every source
+    // failed to respond — if any answered cleanly, the track simply has no
+    // lyrics anywhere we looked.
+    const allErrored = lrclibErrored
+      && neteaseR.status === 'rejected'
+      && ytmR.status === 'rejected';
+    res.json(allErrored ? { ...empty, unavailable: true } : empty);
   } catch {
     res.json(empty);
   }

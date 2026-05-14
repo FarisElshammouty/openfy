@@ -743,7 +743,7 @@ export function PlayerProvider({ children }) {
         translatedPlain = translated;
       }
 
-      const result = { syncedLyrics: translatedSynced, plainLyrics: translatedPlain };
+      const result = { syncedLyrics: translatedSynced, plainLyrics: translatedPlain, source: data.source };
       cacheSet(cache, cacheKey, result);
       return result;
     } catch {
