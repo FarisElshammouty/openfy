@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 import { api } from '../api';
+
+const MENU_W = 208; // w-52
 
 function fmt(sec) {
   if (!sec || isNaN(sec)) return '';
@@ -42,9 +45,16 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
     setMenu(null);
   };
 
-  const menuStyle = menu?.x !== undefined
-    ? { position: 'fixed', left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 320) }
-    : { position: 'absolute', right: 0, top: '100%', marginTop: 4 };
+  // The menu is rendered through a portal into <body> so it always sits in
+  // the root stacking context. If it stayed inside the row, later rows in
+  // the DOM (and the row's own click handler) would capture the clicks.
+  const menuStyle = menu
+    ? {
+        position: 'fixed',
+        left: Math.max(8, Math.min(menu.x, window.innerWidth - MENU_W - 8)),
+        top: Math.max(8, Math.min(menu.y, window.innerHeight - 360))
+      }
+    : null;
 
   return (
     <div
@@ -96,7 +106,12 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
 
         <div className="relative">
           <button
-            onClick={e => { e.stopPropagation(); setMenu(menu ? null : { right: true }); }}
+            onClick={e => {
+              e.stopPropagation();
+              if (menu) { setMenu(null); return; }
+              const r = e.currentTarget.getBoundingClientRect();
+              setMenu({ x: r.right - MENU_W, y: r.bottom + 4 });
+            }}
             className="p-1.5 rounded-full text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-white transition-all"
             title="More"
           >
@@ -109,10 +124,11 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
 
       <div className="text-sm text-neutral-400 w-12 text-right shrink-0">{fmt(track.duration)}</div>
 
-      {menu && (
+      {menu && createPortal(
         <div ref={menuRef} style={menuStyle}
-          className="bg-neutral-800 rounded-lg shadow-2xl py-1 z-50 w-52 border border-neutral-700"
-          onClick={e => e.stopPropagation()}>
+          className="bg-neutral-800 rounded-lg shadow-2xl py-1 z-[200] w-52 border border-neutral-700 max-h-[80vh] overflow-y-auto force-dark"
+          onClick={e => e.stopPropagation()}
+          onContextMenu={e => e.preventDefault()}>
           <button onClick={() => { insertNext(track); setMenu(null); }}
             className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-700 flex items-center gap-2.5 text-neutral-200">
             <svg className="w-4 h-4 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
@@ -172,7 +188,8 @@ export default function TrackRow({ track, index, tracks, onAdd, onRemove }) {
               Remove
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

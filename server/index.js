@@ -204,21 +204,23 @@ async function resolveViaPiped(videoId) {
 
 // ── Lyrics (LRCLIB) ────────────────────────────────────────────────
 
+// One short-timeout attempt. Throws on a network failure / timeout (so the
+// caller can tell "LRCLIB is unreachable" apart from "LRCLIB answered, no
+// match"), returns parsed JSON on success, or null on a non-OK response.
+// Retrying a timed-out request just doubles the wait, so we don't.
 async function fetchLrclib(url) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'Openfy/1.0' },
-      signal: AbortSignal.timeout(10000)
-    }).catch(() => null);
-    if (r?.ok) return r.json();
-  }
-  return null;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'Openfy (https://github.com/FarisElshammouty/openfy)' },
+    signal: AbortSignal.timeout(6000)
+  });
+  return r.ok ? r.json() : null;
 }
 
 app.get('/api/lyrics', async (req, res) => {
+  const empty = { syncedLyrics: null, plainLyrics: null };
   try {
     const { title, artist } = req.query;
-    if (!title) return res.json({ syncedLyrics: null, plainLyrics: null });
+    if (!title) return res.json(empty);
 
     const clean = (s) => s.replace(/\s*\(.*?\)\s*/g, '').replace(/\s*\[.*?\]\s*/g, '')
       .replace(/\s*\|.*$/, '').replace(/\s*ft\..*$/i, '').replace(/\s*feat\..*$/i, '').trim();
@@ -230,20 +232,31 @@ app.get('/api/lyrics', async (req, res) => {
     const params = new URLSearchParams({ track_name: t });
     if (a) params.set('artist_name', a);
 
-    const data = await fetchLrclib(`https://lrclib.net/api/get?${params}`);
+    // Precise lookup first. If it throws, LRCLIB is unreachable — bail now
+    // rather than spending another 6s on a search that will also time out.
+    let data;
+    try {
+      data = await fetchLrclib(`https://lrclib.net/api/get?${params}`);
+    } catch {
+      return res.json(empty);
+    }
     if (data?.syncedLyrics || data?.plainLyrics)
       return res.json({ syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null });
 
+    // /api/get answered but had no exact match — fall back to fuzzy search.
     const q = `${t} ${a}`.trim();
-    const results = await fetchLrclib(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);
+    let results = null;
+    try {
+      results = await fetchLrclib(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);
+    } catch { /* search timed out — treat as not found */ }
     if (Array.isArray(results)) {
       const best = results.find(x => x.syncedLyrics) || results[0];
       if (best) return res.json({ syncedLyrics: best.syncedLyrics || null, plainLyrics: best.plainLyrics || null });
     }
 
-    res.json({ syncedLyrics: null, plainLyrics: null });
+    res.json(empty);
   } catch {
-    res.json({ syncedLyrics: null, plainLyrics: null });
+    res.json(empty);
   }
 });
 
