@@ -10,13 +10,13 @@ export function upgradeThumbnail(url, size = 480) {
     return ytimg[1] + target + ytimg[3];
   }
 
-  // googleusercontent / yt3 — query params at end like =w120-h120-l90-rj or =s256
+  // googleusercontent / yt3: query params at end like =w120-h120-l90-rj or =s256
   const yt3 = url.match(/^(https?:\/\/(?:yt3|lh3)\.googleusercontent\.com\/[^=]+)=(.+)$/);
   if (yt3) {
     return `${yt3[1]}=w${size}-h${size}-l90-rj`;
   }
 
-  // Piped proxy — the underlying ytimg URL is in the host param
+  // Piped proxy: the underlying ytimg URL is in the host param
   const piped = url.match(/^(https?:\/\/[^/]+\/[^?]+)\?(.+)$/);
   if (piped && url.includes('proxy') && url.includes('host=')) {
     return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`).replace(/=s\d+/, `=s${size}`);

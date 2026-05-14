@@ -85,7 +85,7 @@ export default function Search() {
       if (tab !== 'songs') params.tab = tab;
       setSearchParams(params, { replace: true });
       doSearch(trimmed, tab);
-      // Save the search to recents (only after 2s of no typing — handled by debounce)
+      // Save the search to recents (only after 2s of no typing, handled by debounce)
       api.saveRecentSearch(trimmed);
     }, 400);
     return () => clearTimeout(debounceRef.current);

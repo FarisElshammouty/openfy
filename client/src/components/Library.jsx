@@ -147,7 +147,7 @@ export default function Library() {
             ))}
           </div>
         ) : !showSmartBuilder && (
-          <div className="text-neutral-500 text-sm py-2">Auto-updating playlists based on your listening — recently played, most played, never played, etc.</div>
+          <div className="text-neutral-500 text-sm py-2">Auto-updating playlists based on your listening: recently played, most played, never played, etc.</div>
         )}
       </section>
 
@@ -203,7 +203,7 @@ export default function Library() {
               <>
                 <p className="text-xs text-neutral-400 mb-3">
                   Paste a <strong>Spotify</strong> or <strong>Anghami</strong> playlist URL. Each track will be searched on YouTube.
-                  Anghami imports the playlist preview only (3-5 tracks) — for the full list, paste the tracklist instead.
+                  Anghami imports the playlist preview only (3-5 tracks); for the full list, paste the tracklist instead.
                 </p>
                 <div className="flex gap-2">
                   <input type="text" value={importUrl} onChange={e => setImportUrl(e.target.value)}
@@ -241,7 +241,7 @@ Fire Fire by Shimza"
               <div className={`mt-3 text-sm ${importResult.ok ? 'text-green-400' : 'text-red-400'}`}>
                 {importResult.ok
                   ? <button onClick={() => navigate(`/playlist/${importResult.playlistId}`)} className="hover:underline">
-                      Imported "{importResult.name}" — {importResult.added}/{importResult.total} tracks added{importResult.partial ? ' (preview only — paste tracklist for the full playlist)' : ''}
+                      Imported "{importResult.name}": {importResult.added}/{importResult.total} tracks added{importResult.partial ? ' (preview only, paste tracklist for the full playlist)' : ''}
                     </button>
                   : `Error: ${importResult.error}`}
               </div>

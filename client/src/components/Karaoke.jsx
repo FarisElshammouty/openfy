@@ -145,7 +145,7 @@ export default function Karaoke() {
           </div>
         )}
         <button onClick={micEnabled ? disableMic : enableMic}
-          title={micEnabled ? 'Turn off mic' : 'Sing along — turn on mic'}
+          title={micEnabled ? 'Turn off mic' : 'Sing along, turn on mic'}
           className={`p-2 rounded-full transition-colors ${micEnabled ? 'bg-green-500 text-black' : 'bg-white/10 hover:bg-white/20'}`}>
           {micEnabled
             ? <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" /></svg>

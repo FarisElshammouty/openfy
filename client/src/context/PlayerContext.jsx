@@ -133,7 +133,7 @@ export function PlayerProvider({ children }) {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onError = () => {
-      // Audio element MediaError — stream unavailable, decode failed, etc.
+      // Audio element MediaError: stream unavailable, decode failed, etc.
       // Auto-skip to the next track so a single bad video doesn't hang the player.
       const err = a.error;
       console.warn('[Openfy] audio error', err?.code, err?.message, 'src:', a.src?.slice(-60));
@@ -164,7 +164,7 @@ export function PlayerProvider({ children }) {
     const a = audioRef.current;
     const onEnd = () => {
       if (crossfadeStartedRef.current) { crossfadeStartedRef.current = false; return; }
-      // Sleep timer end-of-track mode — keep audio paused and update UI state
+      // Sleep timer end-of-track mode: keep audio paused and update UI state
       if (sleepTimer?.mode === 'end-of-track') {
         setSleepTimer(null);
         setIsPlaying(false);
@@ -334,7 +334,7 @@ export function PlayerProvider({ children }) {
       if (a.currentTime === stuckCheckRef.current.lastProgress) {
         if (!stuckCheckRef.current.stuckSince) stuckCheckRef.current.stuckSince = now;
         if (now - stuckCheckRef.current.stuckSince > 20000) {
-          // 20s stuck — give up and skip
+          // 20s stuck, give up and skip
           console.warn('[Openfy] stream stuck, skipping');
           playNext();
           stuckCheckRef.current.stuckSince = 0;
@@ -374,7 +374,7 @@ export function PlayerProvider({ children }) {
     }
   }, [audioOutputDeviceId]);
 
-  // Media Session handlers + position state — read latest fns from ref
+  // Media Session handlers + position state, read latest fns from ref
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.setActionHandler('play', () => audioRef.current.play());
@@ -422,7 +422,7 @@ export function PlayerProvider({ children }) {
     if (a) { a.addEventListener('seeked', sendPresence); return () => a.removeEventListener('seeked', sendPresence); }
   }, [currentTrack, isPlaying]);
 
-  // Keyboard shortcuts — call latest fns through handlersRef to avoid stale closures
+  // Keyboard shortcuts: call latest fns through handlersRef to avoid stale closures
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -461,7 +461,7 @@ export function PlayerProvider({ children }) {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Electron IPC — call latest fns through handlersRef
+  // Electron IPC: call latest fns through handlersRef
   useEffect(() => {
     if (!window.electronAPI) return;
     window.electronAPI.onMediaControl((action) => {
@@ -572,7 +572,7 @@ export function PlayerProvider({ children }) {
 
   const toggleSettings = useCallback(() => setShowSettings(p => !p), []);
 
-  // Web Audio analyser — initialised lazily on first request. The audio element can
+  // Web Audio analyser, initialised lazily on first request. The audio element can
   // only have ONE MediaElementSource, so we create it once and reuse.
   const getAnalyser = useCallback(() => {
     if (analyserRef.current) {

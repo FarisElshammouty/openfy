@@ -101,7 +101,7 @@ export default function Stats() {
         </section>
       )}
 
-      {/* Top tracks — TrackRow already shows index column, so we use plays as suffix */}
+      {/* Top tracks: TrackRow already shows index column, so we use plays as suffix */}
       {stats.topTracks?.length > 0 && (
         <section>
           <h2 className="text-xl font-bold mb-4">Top tracks</h2>

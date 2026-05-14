@@ -80,7 +80,7 @@ function makeOnsetDetector() {
       lastBeat = now;
       onset = Math.min(1, (bass - avg) / 60);
     }
-    // Expose energy too — particles use this as a continuous baseline.
+    // Expose energy too; particles use this as a continuous baseline.
     return { onset, energy: Math.min(1, bass / 200) };
   };
 }
@@ -590,7 +590,7 @@ function drawParticles(ctx, freqData, w, h, particles, onset, energy, accent) {
   }
   ctx.shadowBlur = 0;
 
-  // Central pulsing core — uses high energy + onset
+  // Central pulsing core, uses high energy + onset
   const coreR = 30 + highEnergy * 80 + onset * 60;
   const grd = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, coreR);
   grd.addColorStop(0, `rgba(${accent.r},${accent.g},${accent.b},${0.4 + highEnergy * 0.4 + onset * 0.3})`);
@@ -740,7 +740,7 @@ function drawVinyl(ctx, freqData, w, h, image, vinylRotRef, isPlaying, accent) {
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
 
-  // Grooves — pulse with bass
+  // Grooves, pulse with bass
   let bassE = 0;
   for (let i = 0; i < 8; i++) bassE += freqData[i];
   bassE /= (8 * 255);
@@ -794,7 +794,7 @@ function drawKaleidoscope(ctx, freqData, w, h, image, kaleidoRotRef, accent, bea
   ctx.fillRect(0, 0, w, h);
 
   if (!image) {
-    // No image — fall back to a colored radial pulse
+    // No image, fall back to a colored radial pulse
     let bassE = 0;
     for (let i = 0; i < 8; i++) bassE += freqData[i];
     bassE /= (8 * 255);

@@ -75,7 +75,7 @@ const audioUrlCache = new Map();
 // videoId → canonical working videoId (when the original is UNPLAYABLE).
 // Holds either a string (resolved) or null (looked up, no canonical found).
 // Seeded from the canonical_redirects table on boot so dead-ID redirects are
-// instant across app restarts — no repeated music.youtube.com HTML fetches.
+// instant across app restarts, with no repeated music.youtube.com HTML fetches.
 const canonicalIdCache = new Map();
 try {
   for (const row of db.prepare('SELECT old_id, new_id FROM canonical_redirects').all()) {
@@ -88,7 +88,7 @@ try {
 // pointing to the current videoId for the same track. Resolving the redirect
 // is a single HTTP request and avoids the fuzzy-match risk of a title search.
 //
-// `forceFresh` skips the in-memory cache — used when a previously-cached
+// `forceFresh` skips the in-memory cache, used when a previously-cached
 // canonical itself dies (i.e. the chain has advanced again: A → B → C).
 async function resolveCanonicalVideoId(originalId, { forceFresh = false } = {}) {
   if (!originalId) return null;
@@ -129,7 +129,7 @@ async function resolveCanonicalVideoId(originalId, { forceFresh = false } = {}) 
 // Rewrite all references to an old videoId in the local SQLite DB to a new
 // videoId. Handles the UNIQUE constraints (a playlist that already contains
 // the new ID, or liked/history rows that already exist for it) by merging
-// instead of failing — the duplicate old row is dropped.
+// instead of failing. The duplicate old row is dropped.
 function migrateVideoIdInDb(oldId, newId) {
   if (!oldId || !newId || oldId === newId) return;
   try {
@@ -603,7 +603,7 @@ app.get('/api/history', (_req, res) => {
   `).all());
 });
 
-// "Made for You" mixes — based on top artists from history
+// "Made for You" mixes, based on top artists from history
 let mixesCache = null;
 
 app.get('/api/mixes', async (_req, res) => {
@@ -878,7 +878,7 @@ async function streamVideoId(req, res, videoId) {
     const segments = plText.split('\n').filter(l => l.startsWith('https://'));
     if (!segments.length) throw new Error('No segments in HLS playlist');
 
-    // Stream segments as they arrive — first chunks are sent ASAP, rest pre-fetched in parallel
+    // Stream segments as they arrive: first chunks are sent ASAP, rest pre-fetched in parallel
     res.status(200);
     res.set('content-type', 'audio/aac');
     res.set('accept-ranges', 'none');
@@ -925,14 +925,14 @@ app.get('/api/stream/:videoId', async (req, res) => {
   // Try the requested videoId
   if (await streamVideoId(req, res, videoId)) return;
 
-  // Original failed — ask YouTube Music for the current canonical. forceFresh
+  // Original failed, ask YouTube Music for the current canonical. forceFresh
   // bypasses cache so we always get the latest mapping when chains advance.
   const canonical = await resolveCanonicalVideoId(videoId, { forceFresh: true });
   if (canonical && canonical !== known) {
     console.log(`[stream] ${videoId} unplayable, following canonical redirect to ${canonical}`);
     if (await streamVideoId(req, res, canonical)) {
       // Persist the rename to the user's DB so subsequent app launches skip
-      // the redirect lookup entirely. Fire-and-forget — never block the stream.
+      // the redirect lookup entirely. Fire-and-forget, never block the stream.
       setImmediate(() => migrateVideoIdInDb(videoId, canonical));
       return;
     }
@@ -1128,7 +1128,7 @@ async function importAnghami(idOrShort, { isShort = false } = {}) {
         lastStatus = r.status;
         if (r.ok) {
           const body = await r.text();
-          // Must contain OG description with track info — bot-challenge pages don't
+          // Must contain OG description with track info; bot-challenge pages don't
           if (body.includes('og:description') || body.includes('og:title')) {
             html = body;
             break outer;
@@ -1153,7 +1153,7 @@ async function importAnghami(idOrShort, { isShort = false } = {}) {
 
   const tracks = [];
   // Pattern: "songs like X by Y, A by B, and C by D"
-  // Use greedy match through end of string — OG descriptions are single sentences,
+  // Use greedy match through end of string; OG descriptions are single sentences,
   // and a non-greedy match would stop at the first period (e.g. "Pt.III").
   const sample = description.match(/(?:songs like|including|tracks like)\s+(.+)$/i);
   if (sample) {
@@ -1194,7 +1194,7 @@ function detectImportSource(url) {
 
 // Follow Anghami short links to get the real numeric playlist ID
 async function resolveAnghamiShort(short) {
-  // Follow redirects fully — `redirect: 'manual'` in undici filters the Location header.
+  // Follow redirects fully; `redirect: 'manual'` in undici filters the Location header.
   const r = await fetch(`https://open.anghami.com/${short}`, {
     headers: { 'User-Agent': 'curl/8.0' },
     redirect: 'follow',
@@ -1239,7 +1239,7 @@ app.post('/api/import-playlist', async (req, res) => {
       source = await importAnghami(detected.id, { isShort: false });
       descriptionLabel = 'Imported from Anghami (preview only)';
     } else if (detected.source === 'anghami-short') {
-      // Hit the short URL directly — open.anghami.com serves OG metadata cleanly
+      // Hit the short URL directly; open.anghami.com serves OG metadata cleanly
       source = await importAnghami(detected.id, { isShort: true });
       descriptionLabel = 'Imported from Anghami (preview only)';
     }
@@ -1263,12 +1263,11 @@ app.post('/api/import-playlist', async (req, res) => {
   }
 });
 
-// Generic paste-tracklist import — works for any source. User pastes a text
+// Generic paste-tracklist import, works for any source. User pastes a text
 // block, one track per line. We try several common formats:
 //   "Artist - Title"
 //   "Title - Artist"
 //   "Title by Artist"
-//   "Title — Artist"
 //   numbered: "1. Title - Artist"
 app.post('/api/import-tracklist', async (req, res) => {
   const { name, text } = req.body;
@@ -1283,10 +1282,10 @@ app.post('/api/import-tracklist', async (req, res) => {
     // Try " by " first (clearer: "Title by Artist")
     let m = line.match(/^(.+?)\s+by\s+(.+)$/i);
     if (m) return { title: m[1].trim(), artist: m[2].trim() };
-    // Em-dash / en-dash / hyphen separator
-    m = line.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+    // Dash separator between title and artist (matches any Unicode dash)
+    m = line.match(/^(.+?)\s+\p{Pd}\s+(.+)$/u);
     if (m) {
-      // Ambiguous which side is title vs artist — keep as-is; the search will work either way
+      // Ambiguous which side is title vs artist, keep as-is; the search will work either way
       return { title: m[2].trim(), artist: m[1].trim() };
     }
     // Single comma

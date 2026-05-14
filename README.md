@@ -28,7 +28,7 @@ Openfy is a Spotify-inspired desktop music player that streams audio for free us
 
 ## Download
 
-Grab the latest portable Windows exe from the [Releases](https://github.com/FarisElshammouty/openfy/releases/latest) page — no install required.
+Grab the latest portable Windows exe from the [Releases](https://github.com/FarisElshammouty/openfy/releases/latest) page. No install required.
 
 ## Features
 
@@ -40,38 +40,38 @@ Grab the latest portable Windows exe from the [Releases](https://github.com/Fari
 - Sleep timer (by minutes or end-of-track)
 - Audio output device picker
 - Keyboard shortcuts (Space, arrows, M for mute, F for fullscreen NowPlaying)
-- Media Session API integration — works with Windows/macOS hardware media keys, lock screen, and taskbar thumbnail controls
+- Media Session API integration works with Windows/macOS hardware media keys, lock screen, and taskbar thumbnail controls
 
 ### Library
 - Create and manage playlists, drag-to-reorder tracks
 - Like/unlike with one click
 - Save albums and follow artists
-- **Smart playlists** — auto-updating rules (most played, recently added, never played, by artist/genre, etc.)
-- **Import** from Spotify, YouTube Music, Anghami, or paste any track list — just drop the URL
-- All data stored locally in SQLite — no account, no cloud, no tracking
+- **Smart playlists** with auto-updating rules (most played, recently added, never played, by artist/genre, etc.)
+- **Import** from Spotify, YouTube Music, Anghami, or paste any track list by dropping the URL
+- All data stored locally in SQLite. No account, no cloud, no tracking
 
 ### Lyrics & Karaoke
 - Real-time synced lyrics via LRCLIB (no API key needed)
 - Falls back to plain lyrics when synced unavailable
-- **Karaoke mode** — fullscreen lyrics with current-word highlighting
-- **Live translation** — translate lyrics on the fly via MyMemory API
+- **Karaoke mode** with fullscreen lyrics and current-word highlighting
+- **Live translation** of lyrics on the fly via MyMemory API
 
 ### Now Playing & Visuals
 - Dynamic gradient that adapts to album art color in real time
 - Fullscreen Now Playing view with blurred art backdrop
-- **10 audio visualizer modes** — frequency bars, particles, waveform, radial, beat-reactive, and more
+- **10 audio visualizer modes**: frequency bars, particles, waveform, radial, beat-reactive, and more
 - Mini-player mode (always-on-top, draggable)
 
 ### Stats & Discovery
-- Listening stats — top artists, top tracks, listening hours, listening streaks
+- Listening stats: top artists, top tracks, listening hours, listening streaks
 - "Made for you" mixes generated from your library
-- History tab — everything you've played
-- Customizable home page — reorder or hide sections
+- History tab with everything you've played
+- Customizable home page (reorder or hide sections)
 
 ### Desktop Integration
 - System tray with media controls (play/pause, next, previous, show, quit)
 - Minimize to tray instead of closing
-- Discord Rich Presence — shows what you're listening to with album art
+- Discord Rich Presence shows what you're listening to with album art
 - Custom `openfy://` protocol for deep linking
 - Light & dark themes with custom accent colors
 - Compact / cozy density modes
@@ -88,7 +88,7 @@ Grab the latest portable Windows exe from the [Releases](https://github.com/Fari
 | Lyrics | LRCLIB, MyMemory (translation) |
 | Imports | Spotify (`__NEXT_DATA__`), YouTube Music, Anghami (OG scraping) |
 | Social | Discord RPC (@xhayper/discord-rpc) |
-| Persistence | SQLite — playlists, liked, history, saved albums, smart playlists, recent searches |
+| Persistence | SQLite: playlists, liked, history, saved albums, smart playlists, recent searches |
 
 ## Getting Started
 
@@ -180,7 +180,7 @@ openfy/
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
