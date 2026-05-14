@@ -17,18 +17,21 @@ export default function Lyrics() {
   const [plain, setPlain] = useState('');
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const containerRef = useRef(null);
   const activeLineRef = useRef(null);
 
   useEffect(() => {
     if (!currentTrack) { setSynced([]); setPlain(''); return; }
-    setSynced([]); setPlain(''); setNotFound(false); setLoading(true);
+    setSynced([]); setPlain(''); setNotFound(false); setUnavailable(false); setLoading(true);
     getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
+      else if (data.unavailable) setUnavailable(true);
       else setNotFound(true);
-    }).catch(() => setNotFound(true)).finally(() => setLoading(false));
-  }, [currentTrack?.videoId, getLyricsCached]);
+    }).catch(() => setUnavailable(true)).finally(() => setLoading(false));
+  }, [currentTrack?.videoId, getLyricsCached, retryKey]);
 
   const currentLine = synced.reduce((acc, line, i) => (progress >= line.time ? i : acc), -1);
 
@@ -92,6 +95,21 @@ export default function Lyrics() {
             </svg>
             <p className="text-sm">No lyrics found</p>
             <p className="text-xs text-neutral-600 mt-1">{currentTrack?.title}</p>
+          </div>
+        )}
+
+        {!loading && unavailable && (
+          <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
+            <svg className="w-12 h-12 mb-3 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+            </svg>
+            <p className="text-sm">Couldn't reach the lyrics service</p>
+            <p className="text-xs text-neutral-600 mt-1">LRCLIB may be down or rate-limiting</p>
+            <button onClick={() => setRetryKey(k => k + 1)}
+              className="mt-4 px-4 py-1.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold transition-colors">
+              Retry
+            </button>
           </div>
         )}
 

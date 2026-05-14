@@ -232,13 +232,15 @@ app.get('/api/lyrics', async (req, res) => {
     const params = new URLSearchParams({ track_name: t });
     if (a) params.set('artist_name', a);
 
-    // Precise lookup first. If it throws, LRCLIB is unreachable — bail now
-    // rather than spending another 6s on a search that will also time out.
+    // Precise lookup first. If it throws, LRCLIB is unreachable (down or
+    // rate-limiting this IP) — bail now rather than spending another 6s on a
+    // search that will also time out, and tell the client it was a service
+    // failure, not a genuine "no lyrics for this track".
     let data;
     try {
       data = await fetchLrclib(`https://lrclib.net/api/get?${params}`);
     } catch {
-      return res.json(empty);
+      return res.json({ ...empty, unavailable: true });
     }
     if (data?.syncedLyrics || data?.plainLyrics)
       return res.json({ syncedLyrics: data.syncedLyrics || null, plainLyrics: data.plainLyrics || null });

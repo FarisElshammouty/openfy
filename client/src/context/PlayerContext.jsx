@@ -710,7 +710,9 @@ export function PlayerProvider({ children }) {
       data = cache.get(baseKey);
     } else {
       data = await api.getLyrics(track.title, track.artist);
-      cacheSet(cache, baseKey, data);
+      // Don't cache a service-unavailable result — a later retry should
+      // actually hit LRCLIB again instead of being served the failure.
+      if (!data.unavailable) cacheSet(cache, baseKey, data);
     }
 
     if (!lyricsTranslate || (!data.syncedLyrics && !data.plainLyrics)) {
