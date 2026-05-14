@@ -13,3 +13,4 @@ build/
 music/
 build.log
 /image-*.png
+.release-notes.md
