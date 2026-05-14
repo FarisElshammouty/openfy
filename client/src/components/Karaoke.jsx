@@ -11,26 +11,61 @@ function parseLRC(lrc) {
   }).filter(l => l && l.text.trim());
 }
 
+// Autocorrelation "voiced confidence": how clearly the mic input is a
+// sustained, pitched sound (a voice holding a note) vs talking, clapping,
+// room noise, or music bleed. Returns 0..1.
+//
+// There is no reference melody to compare against — the app only has lyric
+// text + timestamps, not the song's notes — so this can't grade which note
+// you hit. What it CAN do is tell real singing apart from just making noise:
+// a sung vowel is strongly periodic and autocorrelates to a sharp peak in
+// the 75-900 Hz vocal range; noise and polyphonic music bleed do not.
+function voicedConfidence(buf) {
+  const n = buf.length;
+  let ac0 = 0;
+  for (let i = 0; i < n; i++) ac0 += buf[i] * buf[i];
+  if (ac0 < 1e-4) return 0; // effectively silent
+  const minLag = 49;                       // ~900 Hz
+  const maxLag = Math.min(588, n - 1);     // ~75 Hz
+  let peak = 0;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let ac = 0;
+    for (let i = 0; i < n - lag; i++) ac += buf[i] * buf[i + lag];
+    const norm = ac / ac0;
+    if (norm > peak) peak = norm;
+  }
+  return Math.max(0, Math.min(1, peak));
+}
+
 export default function Karaoke() {
   const { currentTrack, progress, seek, dominantColor, toggleKaraoke, togglePlay, isPlaying, getLyricsCached } = usePlayer();
   const [synced, setSynced] = useState([]);
   const [plain, setPlain] = useState('');
   const [micEnabled, setMicEnabled] = useState(false);
   const [micLevel, setMicLevel] = useState(0); // 0-1 instantaneous level
-  const [score, setScore] = useState(null); // 0-100 cumulative
+  const [score, setScore] = useState(null);    // 0-100 cumulative
   const activeRef = useRef(null);
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const streamRef = useRef(null);
   const animRef = useRef(null);
-  // Score tracking: how many lyric lines had detectable singing
-  const scoreStateRef = useRef({ linesScored: new Set(), totalLines: 0, hitLines: 0 });
+
+  // Scoring state. lineScores: finalized per-line score (0-100). accum: the
+  // line currently being sung. These are refs (not state) because the rAF
+  // tick writes them every frame; the render reads them when it re-renders.
+  const lineScoresRef = useRef(new Map());
+  const accumRef = useRef(null); // { index, samples, active, voicedSum }
+  const currentLineRef = useRef(-1);
+  const isPlayingRef = useRef(isPlaying);
+
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   useEffect(() => {
     if (!currentTrack) return;
     setSynced([]); setPlain('');
     setScore(null);
-    scoreStateRef.current = { linesScored: new Set(), totalLines: 0, hitLines: 0 };
+    lineScoresRef.current = new Map();
+    accumRef.current = null;
     getLyricsCached(currentTrack).then(data => {
       if (data.syncedLyrics) setSynced(parseLRC(data.syncedLyrics));
       else if (data.plainLyrics) setPlain(data.plainLyrics);
@@ -44,32 +79,33 @@ export default function Karaoke() {
   }, [toggleKaraoke]);
 
   const currentLine = synced.reduce((acc, l, i) => (progress >= l.time ? i : acc), -1);
+  useEffect(() => { currentLineRef.current = currentLine; }, [currentLine]);
 
   useEffect(() => {
     if (activeRef.current) activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [currentLine]);
 
-  // Score: for each lyric line, check if user is making sound during it
-  useEffect(() => {
-    if (!micEnabled || currentLine < 0 || !synced[currentLine]) return;
-    const s = scoreStateRef.current;
-    if (s.linesScored.has(currentLine)) return;
-    // Threshold: average mic level above 0.05 (anything beyond background noise)
-    if (micLevel > 0.05) {
-      s.linesScored.add(currentLine);
-      s.hitLines += 1;
-      s.totalLines = Math.max(s.totalLines, currentLine + 1);
-      setScore(Math.round((s.hitLines / s.totalLines) * 100));
-    }
-  }, [micLevel, currentLine, micEnabled, synced]);
+  // Turn a finished line's accumulator into a 0-100 score from two signals:
+  //   coverage — did you vocalize through the whole line (also captures
+  //              timing: a late start leaves the early frames uncovered)
+  //   pitch    — when you did vocalize, was it actually sung (a sustained
+  //              pitch) rather than talking or noise. This is the signal
+  //              that makes the score mean something, so it's weighted
+  //              higher: singing clears ~85+, talking lands mid, pure
+  //              noise stays low even if it's loud and continuous.
+  const scoreAccum = (a) => {
+    if (!a || a.index < 0 || a.samples < 3) return null;
+    const coverage = a.active / a.samples;
+    const pitch = Math.min(1, (a.voicedSum / a.samples) / 0.5);
+    return Math.round(100 * (0.4 * coverage + 0.6 * pitch));
+  };
 
-  // Update totalLines as currentLine progresses
-  useEffect(() => {
-    if (!micEnabled || currentLine < 0) return;
-    const s = scoreStateRef.current;
-    s.totalLines = Math.max(s.totalLines, currentLine + 1);
-    if (s.totalLines > 0) setScore(Math.round((s.hitLines / s.totalLines) * 100));
-  }, [currentLine, micEnabled]);
+  const refreshScore = () => {
+    const scores = [...lineScoresRef.current.values()];
+    const live = scoreAccum(accumRef.current); // include the in-progress line
+    if (live != null) scores.push(live);
+    if (scores.length) setScore(Math.round(scores.reduce((s, x) => s + x, 0) / scores.length));
+  };
 
   const enableMic = async () => {
     try {
@@ -80,21 +116,44 @@ export default function Karaoke() {
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.5;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      const buf = new Uint8Array(analyser.fftSize);
+      const buf = new Float32Array(analyser.fftSize);
+      const ACTIVE_RMS = 0.035; // above this counts as vocalizing
+      let lastAnalyzeAt = 0;
+
       const tick = () => {
-        analyser.getByteTimeDomainData(buf);
-        // RMS
+        analyser.getFloatTimeDomainData(buf);
+
+        // RMS every frame for the live level bar.
         let sum = 0;
-        for (let i = 0; i < buf.length; i++) {
-          const v = (buf[i] - 128) / 128;
-          sum += v * v;
-        }
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
         const rms = Math.sqrt(sum / buf.length);
-        setMicLevel(rms);
+        setMicLevel(Math.round(rms * 100) / 100);
+
+        // Scoring sampled at ~20 Hz — pitch detection is the expensive part.
+        const now = performance.now();
+        if (now - lastAnalyzeAt > 50) {
+          lastAnalyzeAt = now;
+          const ci = currentLineRef.current;
+          let a = accumRef.current;
+          if (!a || a.index !== ci) {
+            const finished = scoreAccum(a);
+            if (finished != null) lineScoresRef.current.set(a.index, finished);
+            a = { index: ci, samples: 0, active: 0, voicedSum: 0 };
+            accumRef.current = a;
+          }
+          if (ci >= 0 && isPlayingRef.current) {
+            a.samples++;
+            const active = rms > ACTIVE_RMS;
+            if (active) {
+              a.active++;
+              a.voicedSum += voicedConfidence(buf);
+            }
+            refreshScore();
+          }
+        }
         animRef.current = requestAnimationFrame(tick);
       };
       tick();
@@ -123,6 +182,11 @@ export default function Karaoke() {
     ? `radial-gradient(ellipse at top, rgba(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b}, 0.5), rgba(0,0,0,1) 80%), #000`
     : 'radial-gradient(ellipse at top, #2a2a2a, #000 80%), #000';
 
+  const scoreColor = score == null ? 'text-white'
+    : score >= 75 ? 'text-green-400'
+    : score >= 45 ? 'text-yellow-400'
+    : 'text-rose-400';
+
   return (
     <div className="force-dark fixed inset-0 z-50 flex flex-col items-center justify-center text-white bg-black" style={{ background: bg }}>
       <button onClick={toggleKaraoke}
@@ -138,10 +202,15 @@ export default function Karaoke() {
 
       {/* Mic + score */}
       <div className="absolute top-6 right-20 flex items-center gap-3">
+        {micEnabled && synced.length === 0 && (
+          <div className="text-xs text-white/50 max-w-[150px] text-right leading-tight">
+            Scoring needs synced lyrics
+          </div>
+        )}
         {score !== null && (
           <div className="text-right">
             <div className="text-xs text-white/60 uppercase tracking-wider">Score</div>
-            <div className="text-2xl font-black tabular-nums">{score}</div>
+            <div className={`text-2xl font-black tabular-nums transition-colors ${scoreColor}`}>{score}</div>
           </div>
         )}
         <button onClick={micEnabled ? disableMic : enableMic}
@@ -165,7 +234,16 @@ export default function Karaoke() {
           <div className="overflow-y-auto max-h-full w-full px-12 lyrics-scroll" style={{ scrollbarWidth: 'none' }}>
             <div className="space-y-8 py-[40vh]">
               {synced.map((line, i) => {
-                const sung = micEnabled && scoreStateRef.current.linesScored.has(i);
+                // Color a passed line by how well it was sung.
+                let scoredClass = '';
+                if (micEnabled && i < currentLine) {
+                  const ls = lineScoresRef.current.get(i);
+                  if (ls != null) {
+                    scoredClass = ls >= 75 ? 'text-green-400'
+                      : ls >= 45 ? 'text-yellow-400'
+                      : 'text-rose-400/70';
+                  }
+                }
                 return (
                   <p key={i} ref={i === currentLine ? activeRef : null}
                     onClick={() => seek(line.time)}
@@ -175,7 +253,7 @@ export default function Karaoke() {
                         : Math.abs(i - currentLine) === 1
                         ? 'text-white/60 text-3xl font-bold'
                         : 'text-white/30 text-2xl font-semibold'
-                    } ${sung && i < currentLine ? 'text-green-400' : ''}`}>
+                    } ${scoredClass}`}>
                     {line.text}
                   </p>
                 );
