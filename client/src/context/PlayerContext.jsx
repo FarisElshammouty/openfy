@@ -85,7 +85,6 @@ export function PlayerProvider({ children }) {
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showNowPlaying, setShowNowPlaying] = useState(false);
-  const [showKaraoke, setShowKaraoke] = useState(false);
   const [miniPlayer, setMiniPlayer] = useState(false);
   const [playbackRate, setPlaybackRateState] = useState(1);
   const [sleepTimer, setSleepTimer] = useState(null); // { endTime, mode: 'time' | 'end-of-track' }
@@ -559,16 +558,12 @@ export function PlayerProvider({ children }) {
   const toggleQueue = useCallback(() => { setShowQueue(p => !p); if (!showQueue) setShowLyrics(false); }, [showQueue]);
   const toggleLyrics = useCallback(() => {
     setShowLyrics(p => !p);
-    if (!showLyrics) { setShowQueue(false); setShowNowPlaying(false); setShowKaraoke(false); }
+    if (!showLyrics) { setShowQueue(false); setShowNowPlaying(false); }
   }, [showLyrics]);
   const toggleNowPlaying = useCallback(() => {
     setShowNowPlaying(p => !p);
-    if (!showNowPlaying) { setShowLyrics(false); setShowKaraoke(false); }
+    if (!showNowPlaying) { setShowLyrics(false); }
   }, [showNowPlaying]);
-  const toggleKaraoke = useCallback(() => {
-    setShowKaraoke(p => !p);
-    if (!showKaraoke) { setShowLyrics(false); setShowNowPlaying(false); }
-  }, [showKaraoke]);
 
   const toggleSettings = useCallback(() => setShowSettings(p => !p), []);
 
@@ -624,7 +619,6 @@ export function PlayerProvider({ children }) {
           audio.play().catch(() => {});
         }
         setShowNowPlaying(false);
-        setShowKaraoke(false);
       }
       return next;
     });
@@ -681,7 +675,7 @@ export function PlayerProvider({ children }) {
   // Keep handlersRef in sync with the latest callbacks for keyboard / media-session / IPC
   handlersRef.current = { playNext, playPrev, toggleQueue, toggleLyrics };
 
-  // Shared lyrics cache so Lyrics/NowPlaying/Karaoke don't all re-fetch
+  // Shared lyrics cache so Lyrics and NowPlaying don't both re-fetch
   const LYRICS_CACHE_MAX = 50;
   const cacheSet = (cache, key, value) => {
     // LRU-ish: delete then set so the entry becomes most recent
@@ -754,7 +748,7 @@ export function PlayerProvider({ children }) {
   return (
     <Ctx.Provider value={{
       currentTrack, queue, queueIndex, isPlaying, volume, progress, duration, shuffle, repeat,
-      crossfade, dominantColor, showQueue, showLyrics, showNowPlaying, showKaraoke, miniPlayer,
+      crossfade, dominantColor, showQueue, showLyrics, showNowPlaying, miniPlayer,
       playbackRate, sleepTimer,
       // Settings
       theme, setTheme, accent, setAccent, density, setDensity,
@@ -764,7 +758,7 @@ export function PlayerProvider({ children }) {
       showVisualizer, toggleVisualizer, getAnalyser, getAnalyserStream,
       togglePlay, playTrack, playNext, playPrev, seek, setVolume,
       addToQueue, insertNext, removeFromQueue, moveInQueue, clearQueue,
-      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleKaraoke, toggleMiniPlayer,
+      toggleShuffle, toggleRepeat, toggleCrossfade, toggleQueue, toggleLyrics, toggleNowPlaying, toggleMiniPlayer,
       setPlaybackRate, startSleepTimer,
       isLiked, toggleLike, playlists, refreshPlaylists, getLyricsCached
     }}>

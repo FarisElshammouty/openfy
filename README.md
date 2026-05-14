@@ -50,10 +50,9 @@ Grab the latest portable Windows exe from the [Releases](https://github.com/Fari
 - **Import** from Spotify, YouTube Music, Anghami, or paste any track list by dropping the URL
 - All data stored locally in SQLite. No account, no cloud, no tracking
 
-### Lyrics & Karaoke
-- Real-time synced lyrics via LRCLIB (no API key needed)
-- Falls back to plain lyrics when synced unavailable
-- **Karaoke mode** with fullscreen lyrics and current-word highlighting
+### Lyrics
+- Real-time synced lyrics with click-to-seek
+- Sourced from LRCLIB, with NetEase and YouTube Music fallbacks so lyrics keep working if one provider is down
 - **Live translation** of lyrics on the fly via MyMemory API
 
 ### Now Playing & Visuals
@@ -136,7 +135,7 @@ Output goes to `dist-electron/`.
 openfy/
 ├── client/                # React frontend (Vite)
 │   └── src/
-│       ├── components/    # UI: Player, Search, Library, NowPlaying, Visualizer, Karaoke, Stats, Settings, Welcome, …
+│       ├── components/    # UI: Player, Search, Library, NowPlaying, Visualizer, Stats, Settings, Welcome, …
 │       ├── context/       # PlayerContext (audio engine, queue, crossfade, themes, settings)
 │       └── api.js         # Thin fetch client
 ├── server/                # Express backend

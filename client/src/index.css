@@ -75,9 +75,9 @@
 [data-theme="light"] .hover\:bg-neutral-800\/50:hover { background-color: rgba(0,0,0,0.05) !important; }
 
 /* ─── Force-dark scope ─────────────────────────────────────────────────── */
-/* Full-screen overlays (Visualizer, Karaoke, NowPlaying, MiniPlayer) opt
-   out of the light-theme overrides via the .force-dark class so they stay
-   readable on their dark backgrounds even when the global theme is light. */
+/* Full-screen overlays (Visualizer, NowPlaying, MiniPlayer) opt out of the
+   light-theme overrides via the .force-dark class so they stay readable on
+   their dark backgrounds even when the global theme is light. */
 .force-dark .bg-black, .force-dark.bg-black { background-color: #000 !important; }
 .force-dark .bg-neutral-900, .force-dark.bg-neutral-900 { background-color: rgb(23, 23, 23) !important; }
 .force-dark .bg-neutral-800, .force-dark.bg-neutral-800 { background-color: rgb(38, 38, 38) !important; }
