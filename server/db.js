@@ -80,6 +80,12 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS canonical_redirects (
+    old_id TEXT PRIMARY KEY,
+    new_id TEXT NOT NULL,
+    resolved_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_pt_playlist ON playlist_tracks(playlist_id);
   CREATE INDEX IF NOT EXISTS idx_history_played ON play_history(last_played DESC);
   CREATE INDEX IF NOT EXISTS idx_recent_searched ON recent_searches(last_searched DESC);

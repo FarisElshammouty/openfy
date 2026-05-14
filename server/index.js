@@ -74,7 +74,14 @@ async function getYtClient() {
 const audioUrlCache = new Map();
 // videoId → canonical working videoId (when the original is UNPLAYABLE).
 // Holds either a string (resolved) or null (looked up, no canonical found).
+// Seeded from the canonical_redirects table on boot so dead-ID redirects are
+// instant across app restarts — no repeated music.youtube.com HTML fetches.
 const canonicalIdCache = new Map();
+try {
+  for (const row of db.prepare('SELECT old_id, new_id FROM canonical_redirects').all()) {
+    canonicalIdCache.set(row.old_id, row.new_id);
+  }
+} catch {}
 
 // When a YouTube Music videoId is dead (deleted / replaced by a new upload),
 // the watch page still serves HTML containing a <link rel="canonical"> tag
@@ -102,6 +109,16 @@ async function resolveCanonicalVideoId(originalId, { forceFresh = false } = {}) 
     const m = html.match(/<link\s+rel="canonical"\s+href="https?:\/\/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/i);
     const canonical = m && m[1] !== originalId ? m[1] : null;
     canonicalIdCache.set(originalId, canonical);
+    // Persist real mappings (not the "no canonical" null result) so the
+    // redirect survives a restart and never costs an HTML fetch again.
+    if (canonical) {
+      try {
+        db.prepare(`
+          INSERT INTO canonical_redirects (old_id, new_id) VALUES (?, ?)
+          ON CONFLICT(old_id) DO UPDATE SET new_id = excluded.new_id, resolved_at = datetime('now')
+        `).run(originalId, canonical);
+      } catch {}
+    }
     return canonical;
   } catch {
     canonicalIdCache.set(originalId, null);
