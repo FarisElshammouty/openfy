@@ -40,12 +40,20 @@ function NavControls() {
 }
 
 function MainLayout() {
-  const { dominantColor, showQueue, showLyrics, showNowPlaying, showVisualizer, miniPlayer, showSettings } = usePlayer();
+  const { dominantColor, showQueue, showLyrics, showNowPlaying, showVisualizer, miniPlayer, showSettings, theme } = usePlayer();
 
   if (miniPlayer) return <MiniPlayer />;
 
+  // The album-art gradient is an inline style, so it overrides the
+  // light-theme CSS on <main>. It has to fade into the themed card color,
+  // not a hardcoded dark, or the main area stays dark in light mode while
+  // the rest of the app is light. A lighter tint also reads better on a
+  // light base.
+  const isLight = theme === 'light';
+  const baseColor = isLight ? 'rgb(243, 243, 243)' : 'rgb(23, 23, 23)';
+  const tintAlpha = isLight ? 0.18 : 0.35;
   const gradientStyle = dominantColor ? {
-    background: `linear-gradient(to bottom, rgba(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b}, 0.35) 0%, rgb(23, 23, 23) 350px)`
+    background: `linear-gradient(to bottom, rgba(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b}, ${tintAlpha}) 0%, ${baseColor} 350px)`
   } : undefined;
 
   return (
