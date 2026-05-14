@@ -61,6 +61,7 @@ export default function NowPlaying() {
     : 'linear-gradient(135deg, #404040 0%, #171717 80%)';
 
   const fmt = (s) => !s || isNaN(s) ? '0:00' : `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+  const pct = duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
 
   const goToArtist = () => {
     if (currentTrack.artistId) {
@@ -98,7 +99,7 @@ export default function NowPlaying() {
           {/* Progress */}
           <div className="w-full mt-6">
             <input type="range" min={0} max={duration || 0} value={progress} onChange={e => seek(+e.target.value)}
-              className="w-full" style={{ background: `linear-gradient(to right, #fff ${(progress / (duration || 1)) * 100}%, rgba(255,255,255,0.3) ${(progress / (duration || 1)) * 100}%)` }} />
+              className="w-full" style={{ background: `linear-gradient(to right, #fff ${pct}%, rgba(255,255,255,0.3) ${pct}%)` }} />
             <div className="flex justify-between mt-1 text-xs text-white/60 tabular-nums">
               <span>{fmt(progress)}</span>
               <span>{fmt(duration)}</span>

@@ -126,8 +126,13 @@ export function PlayerProvider({ children }) {
     a.volume = volume;
     const onTime = () => setProgress(a.currentTime);
     const onDur = () => {
+      // Only adopt the element's duration when it's actually a finite number.
+      // Streamed sources frequently report Infinity or NaN (no Content-Length
+      // on the proxied stream). Clobbering with 0 would wipe the duration we
+      // pre-seed from the track metadata on every track change, leaving the
+      // timer stuck at 0:00 and the progress bar overflowing to full.
       const d = a.duration;
-      setDuration(Number.isFinite(d) && d > 0 ? d : 0);
+      if (Number.isFinite(d) && d > 0) setDuration(d);
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);

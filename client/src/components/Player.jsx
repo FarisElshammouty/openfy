@@ -27,7 +27,7 @@ export default function Player() {
     return () => document.removeEventListener('mousedown', close);
   }, [extrasOpen]);
 
-  const pct = duration > 0 ? (progress / duration) * 100 : 0;
+  const pct = duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
 
   return (
     <footer className="h-[90px] bg-black border-t border-neutral-800 flex items-center px-4 gap-4 shrink-0">
